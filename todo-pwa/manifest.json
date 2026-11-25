@@ -1,0 +1,26 @@
+{
+  "name": "时段待办 · 每日提醒",
+  "short_name": "时段待办",
+  "description": "按早中晚时段管理每日待办，到点在通知栏提醒你。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fdf8f1",
+  "theme_color": "#fdf8f1",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
