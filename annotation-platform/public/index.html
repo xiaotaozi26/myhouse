@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI短剧标注平台</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <p class="center muted" style="margin-top:3rem">正在跳转…</p>
+  <script src="/app.js"></script>
+  <script>
+    (async () => {
+      const u = await me();
+      if (!u) window.location.href = '/login.html';
+      else if (u.role === 'admin') window.location.href = '/admin.html';
+      else window.location.href = '/annotator.html';
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 · AI短剧标注平台</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="login-body">
+  <form id="form" class="card login-card">
+    <h1>AI短剧标注平台</h1>
+    <label>用户名
+      <input id="username" autocomplete="username" required>
+    </label>
+    <label>密码
+      <input id="password" type="password" autocomplete="current-password" required>
+    </label>
+    <div id="error" class="error" role="alert" hidden></div>
+    <button type="submit" id="login-submit" class="primary">登录</button>
+  </form>
+  <script src="/app.js"></script>
+  <script>
+    $('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const button = $('login-submit');
+      if (button.disabled) return;
+      const err = $('error');
+      button.disabled = true;
+      button.textContent = '正在登录…';
+      err.hidden = true;
+      try {
+        const r = await api('/api/auth/login', {
+          method: 'POST',
+          body: { username: $('username').value.trim(), password: $('password').value },
+        });
+        window.location.href = r.user.role === 'admin' ? '/admin.html' : '/annotator.html';
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.hidden = false;
+      } finally {
+        button.disabled = false;
+        button.textContent = '登录';
+      }
+    });
+  </script>
+</body>
+</html>

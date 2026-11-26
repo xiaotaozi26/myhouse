@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>我的任务 · AI短剧标注平台</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">AI短剧标注平台 · 我的任务</div>
+    <div>
+      <span class="who" id="who"></span>
+      <button onclick="logout()">退出</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="helpbox">
+      点「打开标注页」开始。核对完一集后点「完成并提交」。
+    </div>
+    <section class="card" aria-labelledby="annotation-jobs-title">
+      <h2 id="annotation-jobs-title">标注任务</h2>
+      <div id="jobs"></div>
+    </section>
+    <section class="card" id="review-inbox"><h2>审核与返修</h2><div id="my-reviews"></div></section>
+    <section class="card" id="completed-review-section" hidden><h2>已审核</h2><div id="completed-reviews"></div></section>
+  </div>
+
+  <script src="/app.js"></script>
+  <script>
+    let jobs = [];
+
+    function itemRow(i, job) {
+      const query = new URLSearchParams({ batchId: job.batch_id, mode: job.mode, item: i.item_id });
+      const open = '/annotate/' + annotationPages[job.task] + '?' + query;
+      const st = i.status === 'submitted'
+        ? '<span class="badge badge-ok">已提交</span>'
+        : '<span class="badge badge-muted">进行中</span>';
+      return `<div class="kv" style="grid-template-columns:1fr auto auto">
+        <dd>${esc(formatDramaTitle(i.title, i.item_id))} <span class="muted">${languageName(i.lang)}</span> ${priorityBadge(i.priority)}</dd>
+        <dd>${st}</dd>
+        <dd>${i.status === 'assigned' ? `<a href="${esc(open)}" target="_blank" rel="noopener">打开本集</a>` : ''}</dd>
+      </div>`;
+    }
+
+    function renderJobs() {
+      $('jobs').innerHTML = jobs.length ? jobs.map(j => {
+        const done = j.submitted >= j.assigned;
+        const taskQuery = new URLSearchParams({ batchId: j.batch_id, mode: j.mode });
+        return `<div class="card">
+          <h3>${esc(taskTitle(j.task))} <span class="muted">${esc(j.batch_id)}</span></h3>
+          <p class="muted">已分配 ${j.assigned} 集，已提交 ${j.submitted} 集 ${done ? '<span class="badge badge-ok">全部提交</span>' : ''}</p>
+          <div style="margin:8px 0 12px">
+            <a class="btn-like" href="/annotate/${annotationPages[j.task]}?${esc(taskQuery)}" target="_blank" rel="noopener">打开标注页</a>
+          </div>
+          <div style="margin-top:10px">${j.items.map(item => itemRow(item, j)).join('')}</div>
+        </div>`;
+      }).join('') : '<p class="muted">暂无分配给你的标注任务。</p>';
+    }
+
+    async function load() {
+      const r = await api('/api/annotator/jobs');
+      jobs = r.jobs.filter(job => job.mode === 'primary');
+      renderJobs();
+    }
+
+    async function loadReviewInbox() {
+      const { cases, completed = [] } = await api('/api/reviews?includeCompleted=1');
+      $('my-reviews').innerHTML = cases.length ? cases.map(c => `<div class="card review-inbox-item">
+        <div class="review-inbox-detail">
+          <h3>${esc(formatDramaTitle(c.title))}</h3>
+          <p>${esc(taskTitle(c.task))}${c.state === 'review' ? ' · 标注员 ' + esc(c.annotator) : ''}
+            <span class="badge badge-muted">${c.state === 'review' ? '待审核' : '待返修'}</span> ${priorityBadge(c.priority)}</p>
+          ${c.note ? '<p class="review-note">退回原因 · ' + esc(c.note) + '</p>' : ''}
+        </div>
+        <a class="btn-like" href="/annotate/${annotationPages[c.task]}?review=${c.id}">${c.state === 'review' ? '打开审核' : '打开返修'}</a>
+      </div>`).join('') : '<p class="muted">暂无审核或返修待办。</p>';
+      $('completed-review-section').hidden = !completed.length;
+      $('completed-reviews').innerHTML = completed.map(c => `<div class="kv" style="grid-template-columns:1fr auto">
+        <dd><strong>${esc(formatDramaTitle(c.title))}</strong> <span class="muted">${esc(taskTitle(c.task))}</span></dd>
+        <dd>${c.state === 'approved' ? '<span class="badge badge-ok">已审核</span>' : '<span class="badge badge-warn">已退回</span>'}</dd>
+      </div>`).join('');
+    }
+
+
+    (async () => {
+      const u = await me();
+      if (!u) { window.location.href = '/login.html'; return; }
+      if (u.role === 'admin') { window.location.href = '/admin.html'; return; }
+      $('who').textContent = u.display_name;
+      await Promise.all([load(), loadReviewInbox()]);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          Promise.all([load(), loadReviewInbox()]).catch(console.error);
+        }
+      });
+    })().catch(console.error);
+  </script>
+</body>
+</html>

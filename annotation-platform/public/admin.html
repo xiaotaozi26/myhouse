@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>管理后台 · AI短剧标注平台</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">AI短剧标注平台 · 管理后台</div>
+    <div>
+      <span class="who" id="who"></span>
+      <button onclick="logout()">退出</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="tabs">
+      <button class="active" data-tab="batches">批次与进度</button>
+      <button data-tab="assign">任务分配</button>
+      <button data-tab="reviews">审核与返修</button>
+      <button data-tab="results">交付进度</button>
+      <button data-tab="users">账号</button>
+    </div>
+
+    <!-- 批次与进度 -->
+    <section class="tab-panel active" id="tab-batches">
+      <div class="card">
+        <h2>导入批次</h2>
+        <p class="muted">每个新批次单独放一个文件夹。文件准备好后，刷新批次列表，在对应行点「导入」。</p>
+        <details>
+          <summary>新批次放在哪里</summary>
+          <p>在运行平台的电脑上，把批次文件夹放进项目的 <code>data/incoming/</code> 目录。</p>
+          <p>文件夹内需要有批次清单 <code>manifest.json</code> 和标注数据 <code>primary.jsonl</code>。文件夹名与清单中的批次编号一致。</p>
+        </details>
+        <p><button type="button" id="refresh-incoming">刷新批次列表</button></p>
+        <div id="incoming"></div>
+        <p id="import-status" class="muted" role="status"></p>
+      </div>
+      <div class="card">
+        <h2>批次列表</h2>
+        <table id="batches"></table>
+      </div>
+      <div class="card">
+        <h2>标注进度</h2>
+        <label>选择批次
+          <select id="progress-batch"></select>
+        </label>
+        <div id="progress"></div>
+      </div>
+    </section>
+
+    <!-- 账号 -->
+    <section class="tab-panel" id="tab-users">
+      <div class="card">
+        <h2>新增账号</h2>
+        <form id="new-user" novalidate>
+          <p id="nu-help" class="muted">用户名用于登录，限 2–32 位英文字母、数字或 . _ -；显示名可以用中文。</p>
+          <div class="row aligned-fields">
+            <label>用户名<input id="nu-username" placeholder="如 A01" aria-describedby="nu-help" required></label>
+            <label>显示名<input id="nu-name" placeholder="如 张三" required></label>
+            <label>密码<input id="nu-password" type="password" autocomplete="new-password" placeholder="至少 6 位" required></label>
+            <label>角色
+              <select id="nu-role">
+                <option value="annotator">标注员</option>
+                <option value="admin">管理员</option>
+              </select>
+            </label>
+            <button class="primary" id="nu-submit" type="submit">新增</button>
+          </div>
+          <p id="nu-error" class="error" role="alert" hidden></p>
+        </form>
+      </div>
+      <div class="card">
+        <h2>账号列表</h2>
+        <table id="users"></table>
+      </div>
+    </section>
+
+    <!-- 任务分配 -->
+    <section class="tab-panel" id="tab-assign">
+      <div class="card">
+        <h2>批量派单</h2>
+        <h3>选择剧集</h3>
+        <div class="row aligned-fields">
+          <label>批次<select id="as-batch"></select></label>
+          <label>搜索剧名<input id="as-search" type="search"></label>
+          <label>语言<select id="as-language"><option value="">全部语言</option><option value="zh">中文</option><option value="en">英文</option><option value="other">其他</option></select></label>
+        </div>
+        <div class="row assignment-actions">
+          <label class="select-all"><input type="checkbox" id="as-select-all" aria-label="全选当前筛选结果" disabled> 全选</label>
+          <output id="as-visible"></output>
+          <button type="button" class="small" id="as-clear-all" hidden>清空选择</button>
+        </div>
+        <div id="as-items" class="episode-list"></div>
+        <div class="dispatch-settings">
+          <h3>任务和人员</h3>
+          <div id="as-task-options" class="task-options"><label><input type="checkbox" value="people"> 人物与对白</label><label><input type="checkbox" value="assets"> 场景道具</label><label><input type="checkbox" value="shots"> 镜头</label><label><input type="checkbox" value="story"> 剧情</label></div>
+          <div class="row" id="as-allocations"><div class="allocation" data-allocation="people" hidden><strong>人物与对白</strong><label>标注员<select data-task="people"></select></label><label>审核人<select data-reviewer="people"></select></label></div><div class="allocation" data-allocation="assets" hidden><strong>场景道具</strong><label>标注员<select data-task="assets"></select></label><label>审核人<select data-reviewer="assets"></select></label></div><div class="allocation" data-allocation="shots" hidden><strong>镜头</strong><label>标注员<select data-task="shots"></select></label><label>审核人<select data-reviewer="shots"></select></label></div><div class="allocation" data-allocation="story" hidden><strong>剧情</strong><label>标注员<select data-task="story"></select></label><label>审核人<select data-reviewer="story"></select></label></div></div>
+          <label class="priority-field">本次优先级
+            <select id="as-priority"><option value="normal">普通</option><option value="high">优先</option><option value="urgent">紧急</option></select>
+          </label>
+        </div>
+        <div class="row assignment-actions">
+          <button class="primary" id="as-submit" onclick="doAssign()" disabled>确认分配</button>
+          <output id="as-selection" aria-live="polite"></output>
+        </div>
+      </div>
+      <div class="card">
+        <h2>现有分配</h2>
+        <div class="row">
+          <label>批次<select id="la-batch" onchange="loadAssignments()"></select></label>
+          <label>任务<select id="la-task" onchange="loadAssignments()">
+            <option value="">全部</option>
+            <option value="people">人物与对白</option>
+            <option value="assets">场景道具</option>
+            <option value="shots">镜头</option>
+            <option value="story">剧情</option>
+          </select></label>
+          <label>状态<select id="la-status" onchange="loadAssignments()">
+            <option value="">全部</option><option value="assigned">未提交</option><option value="submitted">已提交</option>
+          </select></label>
+        </div>
+        <div id="assignment-bulk" class="row assignment-actions bulk-controls aligned-fields" hidden>
+          <output id="assignment-selected" aria-live="polite"></output>
+          <label>优先级<select id="existing-priority"><option value="normal">普通</option><option value="high">优先</option><option value="urgent">紧急</option></select></label>
+          <button type="button" onclick="bulkAssignment('priority')">批量改优先级</button>
+          <button type="button" class="danger" id="bulk-remove" onclick="bulkAssignment('remove')">批量移除</button>
+          <button type="button" onclick="clearAssignmentSelection()">清空选择</button>
+        </div>
+        <div class="assignment-table"><table id="assignments"></table></div>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-reviews">
+      <div class="card">
+        <h2>审核与返修</h2>
+        <label>状态<select id="review-filter">
+          <option value="">全部</option><option value="unassigned">待管理员指派</option>
+          <option value="review">待复核</option><option value="rework">待返修</option><option value="approved">已通过</option>
+        </select></label>
+                <div class="row assignment-actions">
+          <button type="button" id="review-select-all">全选当前待指派</button>
+          <button type="button" id="review-clear">清空选择</button>
+        </div>
+        <form id="review-bulk" class="row assignment-actions bulk-controls" hidden>
+          <output id="review-selected"></output>
+          <label>审核人<select id="review-bulk-person" required></select></label>
+          <button type="submit" class="primary">批量指派</button>
+        </form>
+        <div class="review-table"><table id="reviews"></table></div>
+      </div>
+    </section>
+
+    <!-- 交付进度 -->
+    <section class="tab-panel" id="tab-results">
+      <div class="card">
+        <h2>交付进度</h2>
+        <div class="row aligned-fields delivery-filters">
+          <label>批次<select id="rs-batch"></select></label>
+          <label>搜索剧名<input id="delivery-search" type="search"></label>
+          <label>状态<select id="delivery-filter">
+            <option value="">全部状态</option>
+            <option value="urgent">紧急</option>
+            <option value="unallocated">待分配</option>
+            <option value="annotating">标注中</option>
+            <option value="unassigned">待指派审核</option>
+            <option value="review">待审核</option>
+            <option value="rework">返修中</option>
+            <option value="ready">可交付</option>
+          </select></label>
+        </div>
+        <div id="delivery-summary" class="delivery-summary"></div>
+        <details id="delivery-scope" class="delivery-scope" hidden>
+          <summary id="delivery-scope-label">交付范围</summary>
+          <form id="delivery-scope-form"></form>
+        </details>
+        <p id="delivery-status" class="muted" role="status"></p>
+        <div class="review-table"><table id="delivery-grid"></table></div>
+      </div>
+      <div class="card">
+        <details id="result-archive">
+          <summary>提交记录</summary>
+          <div class="review-table"><table id="results"></table></div>
+        </details>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="delivery-detail" class="result-preview" aria-labelledby="delivery-detail-title">
+    <header>
+      <h2 id="delivery-detail-title"></h2>
+      <form method="dialog"><button>关闭</button></form>
+    </header>
+    <div id="delivery-detail-body" class="delivery-detail-body"></div>
+  </dialog>
+
+  <dialog id="result-preview" class="result-preview" aria-labelledby="result-preview-title">
+    <header>
+      <h2 id="result-preview-title"></h2>
+      <form method="dialog"><button>关闭</button></form>
+    </header>
+    <div id="result-preview-body" aria-live="polite"></div>
+    <footer><a id="result-preview-download">下载原文件</a></footer>
+  </dialog>
+
+  <script src="/app.js"></script>
+  <script src="/result-preview.js"></script>
+  <script src="/delivery.js"></script>
+  <script>
+    let users = [];
+    let batches = [];
+    let itemsCache = [];
+    let itemsRequest = 0;
+    let assigning = false;
+    let itemsBatch = '';
+    let itemsLoading = false;
+    const selectedEpisodes = new Set();
+    const selectedAssignments = new Set();
+    let assignmentRows = [];
+    let assignmentsRequest = 0;
+    let updatingAssignments = false;
+
+    function badge(status) {
+      return status === 'submitted'
+        ? '<span class="badge badge-ok">已提交</span>'
+        : '<span class="badge badge-muted">已分配</span>';
+    }
+
+    async function init() {
+      const u = await me();
+      if (!u || u.role !== 'admin') { window.location.href = '/login.html'; return; }
+      $('who').textContent = `${u.display_name}（${u.username}）`;
+      await Promise.all([loadUsers(), loadBatches(), loadIncoming()]);
+      loadAssignments();
+    }
+
+    // tabs
+    document.querySelectorAll('.tabs button').forEach((b) => {
+      b.addEventListener('click', () => {
+        document.querySelectorAll('.tabs button').forEach((x) => x.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach((x) => x.classList.remove('active'));
+        b.classList.add('active');
+        $('tab-' + b.dataset.tab).classList.add('active');
+        if (b.dataset.tab === 'reviews') loadReviews().catch(e => toast(e.message, true));
+        if (b.dataset.tab === 'results') refreshDelivery();
+      });
+    });
+
+    // ----- users -----
+    async function loadUsers() {
+      const r = await api('/api/admin/users');
+      users = r.users;
+      const annotators = users.filter((u) => u.role === 'annotator');
+      const options = annotators.map(u => `<option value="${u.id}">${esc(u.display_name)}</option>`).join('');
+      for (const select of $('as-allocations').querySelectorAll('select')) {
+        const previous = select.value;
+        const empty = select.hasAttribute('data-reviewer') ? '提交后指派' : '选择标注员';
+        select.innerHTML = '<option value="">' + empty + '</option>' + options;
+        if (annotators.some((u) => String(u.id) === previous)) select.value = previous;
+      }
+      updateSelection();
+      $('users').innerHTML = '<tr><th>ID</th><th>用户名</th><th>显示名</th><th>角色</th><th>创建时间</th><th></th></tr>' +
+        users.map((u) => `<tr>
+          <td>${u.id}</td><td>${esc(u.username)}</td><td>${esc(u.display_name)}</td>
+          <td>${u.role === 'admin' ? '管理员' : '标注员'}</td>
+          <td>${new Date(u.created_at).toLocaleString()}</td>
+          <td><button class="small danger" onclick="delUser(${u.id})">删除</button></td>
+        </tr>`).join('');
+    }
+
+    async function addUser(event) {
+      event.preventDefault();
+      const button = $('nu-submit');
+      if (button.disabled) return;
+      const error = $('nu-error');
+      error.hidden = true;
+      const username = $('nu-username');
+      const displayName = $('nu-name');
+      const password = $('nu-password');
+      const fields = [username, displayName, password];
+      for (const field of fields) field.removeAttribute('aria-invalid');
+
+      const showError = (message, field) => {
+        error.hidden = false;
+        error.textContent = message;
+        if (field) {
+          field.setAttribute('aria-invalid', 'true');
+          field.focus();
+        }
+      };
+      const body = {
+        username: username.value.trim(),
+        display_name: displayName.value.trim(),
+        password: password.value,
+        role: $('nu-role').value,
+      };
+      if (!/^[A-Za-z0-9._-]{2,32}$/.test(body.username)) {
+        showError('用户名请输入 2–32 位英文字母、数字或 . _ -，中文姓名可填在显示名。', username);
+        return;
+      }
+      if (!body.display_name) {
+        showError('请填写显示名。', displayName);
+        return;
+      }
+      if (body.password.length < 6) {
+        showError('密码至少需要 6 位。', password);
+        return;
+      }
+
+      button.disabled = true;
+      try {
+        await api('/api/admin/users', { method: 'POST', body });
+      } catch (e) {
+        showError(e.message, e.message === '用户名已存在' ? username : undefined);
+        return;
+      } finally {
+        button.disabled = false;
+      }
+      for (const field of fields) field.value = '';
+      toast('已新增账号');
+      try {
+        await loadUsers();
+      } catch {
+        showError('账号已新增，列表刷新失败。请刷新页面查看。');
+      }
+    }
+
+    async function delUser(id) {
+      if (!confirm('确认删除该账号？')) return;
+      try {
+        await api('/api/admin/users/' + id, { method: 'DELETE' });
+        await loadUsers();
+      } catch (e) { toast(e.message, true); }
+    }
+
+    // ----- batches -----
+    async function loadBatches() {
+      const r = await api('/api/admin/batches');
+      batches = r.batches;
+      $('batches').innerHTML = '<tr><th>批次</th><th>工具版本</th><th>条目数</th><th>状态</th><th>导入时间</th></tr>' +
+        batches.map((b) => `<tr>
+          <td>${esc(b.batch_id)}</td><td>${esc(b.tool_version || '-')}</td><td>${b.items}</td>
+          <td>${b.status === 'imported' ? '<span class="badge badge-ok">已导入</span>' : '状态未知'}</td><td>${new Date(b.created_at).toLocaleString()}</td>
+        </tr>`).join('') || '<tr><td colspan="5" class="muted">暂无批次，请先导入</td></tr>';
+      const sel = $('progress-batch');
+      sel.innerHTML = batches.map((b) => `<option value="${esc(b.batch_id)}">${esc(b.batch_id)}</option>`).join('');
+      $('as-batch').innerHTML = batches.map((b) => `<option value="${esc(b.batch_id)}">${esc(b.batch_id)}</option>`).join('');
+      $('la-batch').innerHTML = batches.map((b) => `<option value="${esc(b.batch_id)}">${esc(b.batch_id)}</option>`).join('');
+      const deliveryBatch = $('rs-batch');
+      const selectedDeliveryBatch = deliveryBatch.value;
+      deliveryBatch.innerHTML = batches.map((b) => `<option value="${esc(b.batch_id)}">${esc(b.batch_id)}</option>`).join('');
+      if (batches.some(b => b.batch_id === selectedDeliveryBatch)) deliveryBatch.value = selectedDeliveryBatch;
+      await Promise.all([loadItems(), sel.value ? loadProgress(sel.value) : undefined]);
+    }
+
+    $('refresh-incoming').addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try { await loadIncoming(); }
+      catch (e) { toast(e.message, true); }
+      finally { button.disabled = false; }
+    });
+
+    async function loadIncoming() {
+      const r = await api('/api/admin/incoming');
+      $('incoming').innerHTML = r.dirs.length
+        ? '<table><tr><th>批次</th><th>批次清单</th><th>标注数据</th><th></th></tr>' +
+          r.dirs.map((d) => `<tr>
+            <td>${esc(d.dir)}</td>
+            <td>${d.hasManifest ? '✓' : '✗'}</td>
+            <td>${d.hasPrimary ? '✓' : '✗'}</td>
+            <td>${d.imported ? '<span class="badge badge-ok">已导入</span>'
+              : (d.hasManifest && d.hasPrimary) ? `<button class="small primary" data-import-dir="${esc(d.dir)}">导入</button>`
+              : '<span class="badge badge-muted">缺文件</span>'}</td>
+          </tr>`).join('') + '</table>'
+        : '<p class="muted">暂无可导入的批次。</p>';
+    }
+
+    $('incoming').addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-import-dir]');
+      if (!button || button.disabled) return;
+      const status = $('import-status');
+      button.disabled = true;
+      status.textContent = '正在导入批次并准备中文依据…';
+      try {
+        const r = await api('/api/admin/batches/import', { method: 'POST', body: { dir: button.dataset.importDir } });
+        status.textContent = `已导入 ${r.batchId}，共 ${r.items} 集。` +
+          (r.translated ? `已翻译 ${r.translated} 条不同的场景道具依据。` : '');
+        await Promise.all([loadBatches(), loadIncoming()]);
+      } catch (e) {
+        status.textContent = e.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    async function loadProgress(batchId) {
+      const r = await api('/api/admin/batches/' + encodeURIComponent(batchId) + '/progress');
+      const rows = Object.entries(r.byTask).map(([t, v]) => {
+        const { total, assigned, submitted } = v.primary;
+        return `<tr>
+          <td>${esc(taskTitle(t))}</td>
+          <td>${total}</td>
+          <td>${total - assigned}</td>
+          <td>${assigned - submitted}</td>
+          <td>${submitted}</td>
+        </tr>`;
+      }).join('');
+      if ($('progress-batch').value !== batchId) return;
+      $('progress').innerHTML = '<table><tr><th>任务</th><th>总集数</th><th>待分配</th><th>待提交</th><th>已提交</th></tr>' + rows + '</table>';
+    }
+
+    // ----- assignment -----
+    async function loadItems() {
+      const request = ++itemsRequest;
+      const batchId = $('as-batch').value;
+      if (itemsBatch !== batchId) selectedEpisodes.clear();
+      itemsBatch = batchId;
+      itemsCache = [];
+      itemsLoading = !!batchId;
+      $('as-items').textContent = batchId ? '正在读取剧集…' : '请先导入批次。';
+      $('as-visible').textContent = '';
+      updateSelection();
+      if (!batchId) return;
+      try {
+        const r = await api('/api/admin/batches/' + encodeURIComponent(batchId) + '/items');
+        if (request !== itemsRequest) return;
+        itemsLoading = false;
+        itemsCache = r.items;
+        const available = new Set(itemsCache.map(item => item.item_id));
+        for (const id of selectedEpisodes) if (!available.has(id)) selectedEpisodes.delete(id);
+        renderEpisodes();
+      } catch (e) {
+        if (request !== itemsRequest) return;
+        itemsLoading = false;
+        $('as-items').textContent = e.message;
+      }
+      updateSelection();
+    }
+
+    function matchingEpisodes() {
+      const query = $('as-search').value.trim().replace(/^《|》$/g, '').trim().toLowerCase();
+      const language = $('as-language').value;
+      return itemsCache.filter(item => (!language || languageKey(item.lang) === language) &&
+        (!query || (item.title || item.item_id).toLowerCase().includes(query)));
+    }
+
+    function renderEpisodes() {
+      if (itemsLoading || !itemsBatch) return;
+      const rows = matchingEpisodes();
+      $('as-visible').textContent = `显示 ${rows.length} 集`;
+      $('as-items').innerHTML = rows.length ? '<table><thead><tr><th scope="col">选择</th><th scope="col">剧名</th><th scope="col">语言</th></tr></thead><tbody>' +
+        rows.map(item => {
+          const title = esc(formatDramaTitle(item.title));
+          return `<tr><td><input type="checkbox" data-episode="${esc(item.item_id)}" aria-label="选择 ${title}" ${selectedEpisodes.has(item.item_id) ? 'checked' : ''}></td>
+            <td class="episode-title" title="${title}">${title}</td><td>${languageName(item.lang)}</td></tr>`;
+        }).join('') + '</tbody></table>' : '<p class="muted empty-list">没有符合筛选条件的剧集。</p>';
+      updateSelection();
+    }
+
+    function selectVisibleEpisodes(checked) {
+      for (const { item_id: id } of matchingEpisodes()) {
+        if (checked) selectedEpisodes.add(id);
+        else selectedEpisodes.delete(id);
+      }
+      renderEpisodes();
+    }
+
+    function clearEpisodes() {
+      selectedEpisodes.clear();
+      renderEpisodes();
+      updateSelection();
+    }
+
+    function syncEpisodeCheckbox() {
+      const visible = itemsLoading ? [] : matchingEpisodes();
+      const visibleSelected = visible.filter(item => selectedEpisodes.has(item.item_id)).length;
+      const control = $('as-select-all');
+      control.disabled = !visible.length;
+      control.checked = !!visible.length && visibleSelected === visible.length;
+      control.indeterminate = visibleSelected > 0 && visibleSelected < visible.length;
+      $('as-clear-all').hidden = selectedEpisodes.size === visibleSelected;
+    }
+
+    function selectedTasks() {
+      return new Set([...$('as-task-options').querySelectorAll('input:checked')].map(input => input.value));
+    }
+
+    function updateSelection() {
+      syncEpisodeCheckbox();
+      const tasks = selectedTasks();
+      const allocations = [...$('as-allocations').querySelectorAll('[data-allocation]')];
+      for (const row of allocations) row.hidden = !tasks.has(row.dataset.allocation);
+      const ready = allocations.filter(row => !row.hidden && row.querySelector('[data-task]').value).length;
+      $('as-selection').textContent = selectedEpisodes.size && tasks.size
+        ? `已选 ${selectedEpisodes.size} 集 · ${tasks.size} 个任务${ready === tasks.size ? ' · 共 ' + selectedEpisodes.size * tasks.size + ' 份作业' : ' · 请为所选任务选标注员'}`
+        : '请选择剧集和任务';
+      $('as-submit').disabled = assigning || itemsLoading || !selectedEpisodes.size || !tasks.size || ready !== tasks.size;
+    }
+
+    async function doAssign() {
+      if ($('as-submit').disabled) return;
+      const batchId = $('as-batch').value;
+      const itemIds = [...selectedEpisodes];
+      const tasks = selectedTasks();
+      const allocations = [...$('as-allocations').querySelectorAll('[data-task]')]
+        .filter((select) => tasks.has(select.dataset.task))
+        .map((select) => ({
+          task: select.dataset.task,
+          assigneeId: Number(select.value),
+          reviewerId: Number(select.closest('.allocation').querySelector('[data-reviewer]').value) || null,
+        }));
+      if (!batchId || !itemIds.length || !allocations.length) return;
+      assigning = true;
+      updateSelection();
+      try {
+        const r = await api('/api/admin/assignments', { method: 'POST', body: { batchId, itemIds, allocations, priority: $('as-priority').value } });
+        toast(r.created ? `已新增 ${r.created} 份作业` : '所选作业已分配给对应标注员');
+        if ($('as-batch').value === batchId) clearEpisodes();
+        $('la-batch').value = batchId;
+        $('la-task').value = '';
+        await Promise.all([loadAssignments(), loadProgress($('progress-batch').value)]);
+      } catch (e) { toast(e.message, true); }
+      finally {
+        assigning = false;
+        updateSelection();
+      }
+    }
+
+    async function loadAssignments() {
+      const request = ++assignmentsRequest;
+      const q = new URLSearchParams();
+      if ($('la-batch').value) q.set('batchId', $('la-batch').value);
+      if ($('la-task').value) q.set('task', $('la-task').value);
+      q.set('mode', 'primary');
+      assignmentRows = [];
+      $('assignments').innerHTML = '<tr><td class="muted">正在读取分配…</td></tr>';
+      clearAssignmentSelection();
+      const r = await api('/api/admin/assignments?' + q.toString());
+      if (request !== assignmentsRequest) return;
+      const status = $('la-status').value;
+      assignmentRows = r.assignments.filter(row => !status || row.status === status);
+      $('assignments').innerHTML = '<thead><tr><th><input type="checkbox" id="assignment-select-all" aria-label="全选当前结果"></th><th>剧集与任务</th><th>标注员</th><th>优先级</th><th>状态</th><th></th></tr></thead><tbody>' +
+        (assignmentRows.map(a => `<tr>
+          <td><input type="checkbox" data-assignment="${a.id}" aria-label="选择 ${esc(formatDramaTitle(a.title, '剧集'))} ${esc(taskTitle(a.task))}"></td>
+          <td><strong>${esc(formatDramaTitle(a.title))}</strong><div class="muted">${esc(taskTitle(a.task))} · ${esc(a.batch_id)}</div></td>
+          <td>${esc(a.display_name)}</td><td>${priorityBadge(a.priority, true)}</td><td>${badge(a.status)}</td>
+          <td>${a.status === 'assigned' ? `<button class="small danger" onclick="delAssign(${a.id})">移除</button>` : ''}</td>
+        </tr>`).join('') || '<tr><td colspan="6" class="muted">暂无分配</td></tr>') + '</tbody>';
+      updateAssignmentSelection();
+    }
+
+    function updateAssignmentSelection() {
+      const count = selectedAssignments.size;
+      const all = $('assignment-select-all');
+      if (all) {
+        all.disabled = !assignmentRows.length;
+        all.checked = !!count && count === assignmentRows.length;
+        all.indeterminate = !!count && count !== assignmentRows.length;
+      }
+      $('assignment-bulk').hidden = !count;
+      const hasSubmitted = assignmentRows.some(a => selectedAssignments.has(a.id) && a.status !== 'assigned');
+      $('assignment-selected').textContent = `已选 ${count} 份${hasSubmitted ? ' · 含已提交作业，只可改优先级' : ''}`;
+      $('bulk-remove').disabled = hasSubmitted;
+    }
+
+    function clearAssignmentSelection() {
+      selectedAssignments.clear();
+      $('assignments').querySelectorAll('[data-assignment]').forEach(input => { input.checked = false; });
+      updateAssignmentSelection();
+    }
+
+    async function bulkAssignment(action, ids = [...selectedAssignments]) {
+      if (!ids.length || updatingAssignments) return;
+      if (action === 'remove' && !confirm(`移除这 ${ids.length} 份未提交的任务分配？`)) return;
+      updatingAssignments = true;
+      try {
+        const r = await api('/api/admin/assignments/bulk', {
+          method: 'POST', body: { ids, action, priority: $('existing-priority').value },
+        });
+        toast(action === 'remove' ? `已移除 ${r.changed} 份任务` : `已更新 ${r.changed} 份任务的优先级`);
+        await Promise.all([loadAssignments(), loadProgress($('progress-batch').value)]);
+      } catch (e) { toast(e.message, true); }
+      finally { updatingAssignments = false; }
+    }
+
+    function delAssign(id) {
+      return bulkAssignment('remove', [id]);
+    }
+
+    $('assignments').addEventListener('change', event => {
+      const input = event.target;
+      const choices = input.id === 'assignment-select-all' ? $('assignments').querySelectorAll('[data-assignment]') : [input];
+      if (!input.matches('#assignment-select-all,[data-assignment]')) return;
+      for (const choice of choices) {
+        choice.checked = input.checked;
+        const id = Number(choice.dataset.assignment);
+        if (choice.checked) selectedAssignments.add(id);
+        else selectedAssignments.delete(id);
+      }
+      updateAssignmentSelection();
+    });
+
+    function updateReviewSelection() {
+      const count = $('reviews').querySelectorAll('[data-review-choice]:checked').length;
+      $('review-bulk').hidden = !count;
+      $('review-selected').textContent = `已选 ${count} 份`;
+    }
+
+    $('review-select-all').onclick = () => {
+      $('reviews').querySelectorAll('[data-review-choice]').forEach(input => { input.checked = true; });
+      updateReviewSelection();
+    };
+    $('review-clear').onclick = () => {
+      $('reviews').querySelectorAll('[data-review-choice]').forEach(input => { input.checked = false; });
+      updateReviewSelection();
+    };
+    $('reviews').addEventListener('change', updateReviewSelection);
+    $('review-bulk').addEventListener('submit', async event => {
+      event.preventDefault();
+      const ids = [...$('reviews').querySelectorAll('[data-review-choice]:checked')].map(input => Number(input.value));
+      const button = event.currentTarget.querySelector('button');
+      if (!ids.length || button.disabled) return;
+      button.disabled = true;
+      try {
+        const result = await api('/api/reviews/bulk/reviewer', {
+          method: 'POST', body: { ids, reviewerId: Number($('review-bulk-person').value) },
+        });
+        toast(`已指派 ${result.changed} 份复核`);
+        await loadReviews();
+      } catch (e) { toast(e.message, true); }
+      finally { button.disabled = false; }
+    });
+
+    async function loadReviews() {
+      const { cases } = await api('/api/reviews');
+      const filter = $('review-filter').value;
+      const visible = cases.filter(c => !filter || c.state === filter);
+      const canSelect = visible.some(c => c.state === 'unassigned');
+      const columnCount = canSelect ? 6 : 5;
+      const statusColors = { unassigned: 'muted', review: 'info', rework: 'warn', approved: 'ok' };
+      $('review-bulk-person').innerHTML = '<option value="">选择审核人</option>' + users
+        .filter(u => u.role === 'annotator').map(u => `<option value="${u.id}">${esc(u.display_name)}</option>`).join('');
+      $('reviews').innerHTML = `<tr>${canSelect ? '<th>选择</th>' : ''}<th>剧集与任务</th><th>当前状态</th><th>标注员</th><th>下一步</th><th>操作</th></tr>` +
+        (visible.map(c => {
+          const owner = c.state === 'review' ? c.reviewer : c.state === 'rework' ? c.annotator : '';
+          const next = { unassigned: '选择审核人', review: '核对这一集并给出结论', rework: '修改后重新提交', approved: '查看最终结果' }[c.state];
+          const options = users.filter(u => u.role === 'annotator' && u.id !== c.assignee_id).map(u =>
+            `<option value="${u.id}" ${u.id === c.reviewer_id ? 'selected' : ''}>${esc(u.display_name)}</option>`
+          ).join('');
+          const assign = c.state === 'unassigned' || c.state === 'review';
+          const selection = c.state === 'unassigned'
+            ? `<input type="checkbox" data-review-choice value="${c.id}" aria-label="选择 ${esc(formatDramaTitle(c.title, '剧集'))} ${esc(taskTitle(c.task))}">`
+            : '<span class="muted" aria-label="不可批量指派">—</span>';
+          return `<tr>
+            ${canSelect ? `<td>${selection}</td>` : ''}
+            <td><strong>${esc(formatDramaTitle(c.title))}</strong><div class="muted">${esc(taskTitle(c.task))} · ${esc(c.batch_id)}</div></td>
+            <td><span class="badge badge-${statusColors[c.state]}">${reviewStatus[c.state]}</span>${owner ? ' ' + esc(owner) : ''} ${priorityBadge(c.priority)}</td><td>${esc(c.annotator)}</td>
+            <td>${next}${c.note ? c.state === 'rework'
+              ? `<div class="rework-reason"><strong>返修原因</strong><span>${esc(c.note)}</span></div>`
+              : `<div class="review-note">${esc(c.note)}</div>`
+              : ''}</td>
+            <td>${assign ? `<form class="review-assign" data-reviewer-case="${c.id}"><select aria-label="审核人" required><option value="">选择审核人</option>${options}</select><button type="submit">指派审核人</button></form>` : ''}
+              ${previewButton('/api/reviews/' + c.id + '/history/' + c.version, c.state === 'approved' ? '查看通过稿' : '查看当前稿')}
+              <button type="button" class="small" data-history="${c.id}">历史版本</button>
+            </td>
+          </tr><tr id="history-${c.id}" hidden><td colspan="${columnCount}"></td></tr>`;
+        }).join('') || `<tr><td colspan="${columnCount}" class="muted">暂无符合条件的作业。</td></tr>`);
+      $('review-select-all').disabled = !canSelect;
+      $('review-clear').disabled = !canSelect;
+      updateReviewSelection();
+    }
+
+    $('review-filter').addEventListener('change', () => loadReviews().catch(e => toast(e.message, true)));
+    $('reviews').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.target;
+      const button = form.querySelector('button');
+      button.disabled = true;
+      try {
+        await api('/api/reviews/' + form.dataset.reviewerCase + '/reviewer', {
+          method: 'POST', body: { reviewerId: Number(form.querySelector('select').value) },
+        });
+        await loadReviews();
+      } catch (e) { toast(e.message, true); }
+      finally { button.disabled = false; }
+    });
+    $('reviews').addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-history]');
+      if (!button) return;
+      const id = button.dataset.history, target = $('history-' + id);
+      if (!target.hidden) { target.hidden = true; return; }
+      try {
+        const { versions } = await api('/api/reviews/' + id + '/history');
+        target.firstElementChild.innerHTML = '<ul>' + versions.map(v => `<li>
+          ${reviewResult[v.kind]} · ${esc(v.author || '已停用账号')} · ${esc(new Date(v.created_at).toLocaleString())}
+          ${v.note ? ' · ' + esc(v.note) : ''}
+          ${previewButton('/api/reviews/' + id + '/history/' + v.version, '查看此版标注')}
+          ${v.has_timing ? previewButton('/api/reviews/' + id + '/history/' + v.version + '?kind=timing', '查看工作记录') : ''}
+        </li>`).join('') + '</ul>';
+        target.hidden = false;
+      } catch (e) { toast(e.message, true); }
+    });
+
+    // ----- results -----
+    async function loadResults() {
+      const batchId = $('rs-batch').value;
+      if (!batchId) return;
+      const q = batchId ? '?batchId=' + encodeURIComponent(batchId) : '';
+      const r = await api('/api/admin/results' + q);
+      if ($('rs-batch').value !== batchId) return;
+      $('results').innerHTML = '<tr><th>批次</th><th>任务</th><th>剧集</th><th>标注员</th><th>提交集数</th><th>提交时间</th><th>操作</th></tr>' +
+        (r.results.map((x) => `<tr>
+          <td>${esc(x.batch_id)}</td>
+          <td>${esc(taskTitle(x.task))}</td>
+          <td>${x.episodes.map(episode => `<div>${esc(resultEpisodeLabel(episode))}</div>`).join('')}</td>
+          <td>${esc(x.display_name)}</td>
+          <td>${x.item_ids.length} 集</td>
+          <td>${new Date(x.uploaded_at).toLocaleString()}</td>
+          <td>${previewButton('/api/admin/results/' + x.id + '/download', '查看标注结果')}
+            ${x.has_timing ? previewButton('/api/admin/results/' + x.id + '/download?kind=timing', '查看工作记录') : ''}</td>
+        </tr>`).join('') || '<tr><td colspan="7" class="muted">暂无回传</td></tr>');
+    }
+
+    $('result-archive').addEventListener('toggle', () => {
+      if ($('result-archive').open) loadResults().catch(e => toast(e.message, true));
+    });
+
+    $('new-user').addEventListener('submit', addUser);
+    $('progress-batch').addEventListener('change', (e) => loadProgress(e.target.value));
+    $('as-batch').addEventListener('change', loadItems);
+    $('as-items').addEventListener('change', event => {
+      const input = event.target;
+      if (!input.matches('[data-episode]')) return;
+      if (input.checked) selectedEpisodes.add(input.dataset.episode);
+      else selectedEpisodes.delete(input.dataset.episode);
+      updateSelection();
+    });
+    $('as-select-all').addEventListener('change', event => selectVisibleEpisodes(event.target.checked));
+    $('as-clear-all').addEventListener('click', clearEpisodes);
+    $('as-search').addEventListener('input', renderEpisodes);
+    $('as-language').addEventListener('change', renderEpisodes);
+    $('as-task-options').addEventListener('change', updateSelection);
+    $('as-allocations').addEventListener('change', updateSelection);
+
+    init().catch((e) => toast(e.message, true));
+  </script>
+</body>
+</html>

@@ -1,0 +1,213 @@
+{
+  "id": "FS-P001",
+  "status": "prepared_not_dispatched",
+  "tool_version": "4.2.0",
+  "pages": [
+    "drama-people-annotation.html",
+    "drama-assets-annotation.html",
+    "drama-shots-annotation.html",
+    "drama-story-annotation.html"
+  ],
+  "scope": "Full-schema pilot: the same rows open on four pages (people and dialogue, scenes and props, shots, story); machine prelabels reviewed by people.",
+  "unique_items": 25,
+  "independent_second_reviews": 5,
+  "by_language": {
+    "zh": 13,
+    "en": 12
+  },
+  "source_video_minutes": 38.45,
+  "coordination": {
+    "contact_role": "vendor_administrator",
+    "assignment_owner": "vendor_administrator",
+    "requester_direct_annotator_contact": false,
+    "traceability": "Vendor-managed operator IDs in the exported work logs and returned filenames."
+  },
+  "completed_annotations": 0,
+  "items": [
+    {
+      "item_id": "G:main:toolatetoloveyou:v143afg50001d4mtqlfog65grj8jgvo0",
+      "episode_id": "ep001",
+      "lang": "zh",
+      "duration_s": 137.859,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:ohmymightygeneral:v143afg50001d4g5au7og65k92grk4ag",
+      "episode_id": "ep001",
+      "lang": "zh",
+      "duration_s": 78.96,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:哭红眼后苏小姐封琴离婚了:v143afg50001d6s9ar7og65t4gkcbdj0",
+      "episode_id": "ep001",
+      "lang": "zh",
+      "duration_s": 140.5,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:狂龙重启:v143afg50001d54b1ofog65vd4i2puv0",
+      "episode_id": "ep001",
+      "lang": "zh",
+      "duration_s": 60.08,
+      "second_review": true
+    },
+    {
+      "item_id": "G:main:闪婚老公捧我当歌星:v143afg50001d6so9dvog65tjuk4frs0",
+      "episode_id": "ep001",
+      "lang": "zh",
+      "duration_s": 87.16,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:thebattleforfamilyproperty:v143afg50001d4m531vog65tkv7nohl0",
+      "episode_id": "ep001",
+      "lang": "zh",
+      "duration_s": 65.067,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:团宠小妹甜又娇:v143afg50001d5ji87nog65q2rcv1bh0",
+      "episode_id": "ep001",
+      "lang": "zh",
+      "duration_s": 80.534,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:她靠赊刀长生不死:v143afg50001d7d9a17og65mgmp8brkg",
+      "episode_id": "ep001",
+      "lang": "zh",
+      "duration_s": 120.837,
+      "second_review": true
+    },
+    {
+      "item_id": "G:main:趁热吃:v1c3afg50001d6t2jhfog65rbu9egtl0",
+      "episode_id": "ep001",
+      "lang": "zh",
+      "duration_s": 103.449,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:池鱼思故渊:v143afg50001d542c67og65jenqc7jog",
+      "episode_id": "ep001",
+      "lang": "zh",
+      "duration_s": 128.0,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:离婚后白月光她终于出手了:v1c3afg50001d70vee7og65m9a8slmp0",
+      "episode_id": "ep001",
+      "lang": "zh",
+      "duration_s": 131.193,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:婚礼当天我华丽转身:v1c3afg50001d5f5sunog65j2sut842g",
+      "episode_id": "ep001",
+      "lang": "zh",
+      "duration_s": 65.728,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:落魄金刚:v143afg50001d7cp7d7og65lbv82r1fg",
+      "episode_id": "ep001",
+      "lang": "zh",
+      "duration_s": 60.928,
+      "second_review": true
+    },
+    {
+      "item_id": "G:main:insistersnametimeforpayback:v143afg50001d5a4u77og65sp9lt5d50",
+      "episode_id": "ep001",
+      "lang": "en",
+      "duration_s": 129.213,
+      "second_review": true
+    },
+    {
+      "item_id": "G:main:whendoingrightpaidoff:v1c3afg50001d7idjqvog65qgsodmg8g",
+      "episode_id": "ep001",
+      "lang": "en",
+      "duration_s": 67.873,
+      "second_review": true
+    },
+    {
+      "item_id": "G:main:queenofrevengesistersfury:v1c3afg50001d60k8qvog65s0sf7d2j0",
+      "episode_id": "ep001",
+      "lang": "en",
+      "duration_s": 122.134,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:revengeofthefallensoninlaw:v1c3afg50001d7io8mnog65o8j96ibl0",
+      "episode_id": "ep001",
+      "lang": "en",
+      "duration_s": 55.36,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:extranomorethebackgroundcharacteruprising:v1c3afg50001d7jmcgfog65ktfvh2cfg",
+      "episode_id": "ep001",
+      "lang": "en",
+      "duration_s": 67.942,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:billionairescanvascinderella:v143afg50001d61a8hnog65o8hsq0d4g",
+      "episode_id": "ep001",
+      "lang": "en",
+      "duration_s": 103.979,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:rebornbeforethewave:v143afg50001d7fddffog65qe7mqakhg",
+      "episode_id": "ep001",
+      "lang": "en",
+      "duration_s": 80.017,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:iboughtaghosttownanditpaidmeingold:v1c3afg50001d7o96j7og65q14nnm5eg",
+      "episode_id": "ep001",
+      "lang": "en",
+      "duration_s": 60.256,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:whenmengotboobs:v1c3afg50001d7ffdu7og65vkc64kkl0",
+      "episode_id": "ep001",
+      "lang": "en",
+      "duration_s": 59.882,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:rotinhelldearexhusband:v1c3afg50001d7pcil7og65nvm4prs6g",
+      "episode_id": "ep001",
+      "lang": "en",
+      "duration_s": 127.274,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:thechauffeur:v1c3afg50001d7dv01vog65qa2h1u7v0",
+      "episode_id": "ep001",
+      "lang": "en",
+      "duration_s": 95.403,
+      "second_review": false
+    },
+    {
+      "item_id": "G:main:meridiantheashfordinheritance:v1c3afg50001d7if857og65s209uqac0",
+      "episode_id": "ep001",
+      "lang": "en",
+      "duration_s": 77.509,
+      "second_review": false
+    }
+  ],
+  "files": {
+    "primary.jsonl": {
+      "sha256": "4b1d3aee19f32804f5abd9111d0d8dee15f062cc6952db6f5bc01e72da8b76a3",
+      "records": 25
+    },
+    "overlap.jsonl": {
+      "sha256": "940b9b3e23ae987d156dfbba09959f8cc498a2e60dad7d7d6afbc932011284c2",
+      "records": 5
+    }
+  }
+}
