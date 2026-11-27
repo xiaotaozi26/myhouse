@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>供应商管理 · AI短剧标注平台</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+  <div class="topbar"><div class="brand">AI短剧标注平台 · 供应商管理</div><div><span id="who" class="who"></span>
+    <button onclick="logout()">退出</button></div></div>
+  <main class="wrap">
+    <div class="tabs" aria-label="供应商管理功能">
+      <button class="active" id="supplier-overview">进度总览</button><button id="supplier-manage">作业转派</button>
+    </div>
+    <div id="supplier-stats" data-supplier-only></div><div id="supplier-operations" data-supplier-only hidden></div>
+  </main>
+  <script src="/app.js"></script><script src="/supplier-stats.js"></script>
+  <script>
+    (async () => {
+      const user = await me();
+      if (!user) return;
+      if (user.work_role !== 'supplier_manager') { location.replace('/'); return; }
+      $('who').textContent = user.display_name;
+      for (const id of ['supplier-overview','supplier-manage']) $(id).onclick = async () => {
+        const manage = id === 'supplier-manage';
+        $('supplier-overview').classList.toggle('active', !manage);
+        $('supplier-manage').classList.toggle('active', manage);
+        $('supplier-stats').hidden = manage;
+        $('supplier-operations').hidden = !manage;
+        try { await (manage ? loadSupplierOperations() : loadSupplierStats()); }
+        catch (error) { toast(error.message, true); }
+      };
+      await loadSupplierStats();
+    })().catch(error => toast(error.message, true));
+  </script>
+</body></html>

@@ -21,6 +21,7 @@
       <button data-tab="assign">任务分配</button>
       <button data-tab="reviews">审核与返修</button>
       <button data-tab="results">交付进度</button>
+      <button data-tab="stats">进度总览</button>
       <button data-tab="users">账号</button>
     </div>
 
@@ -52,7 +53,14 @@
     </section>
 
     <!-- 账号 -->
+    <section class="tab-panel" id="tab-stats"><div id="supplier-stats"></div></section>
     <section class="tab-panel" id="tab-users">
+      <form class="card" id="supplier-form">
+        <h2>供应商</h2>
+        <div class="row aligned-fields"><label>名称<input name="name" required maxlength="80"></label>
+        <button class="primary">新增供应商</button></div>
+        <p id="supplier-list" class="muted"></p>
+      </form>
       <div class="card">
         <h2>新增账号</h2>
         <form id="new-user" novalidate>
@@ -63,12 +71,18 @@
             <label>密码<input id="nu-password" type="password" autocomplete="new-password" placeholder="至少 6 位" required></label>
             <label>角色
               <select id="nu-role">
-                <option value="annotator">标注员</option>
-                <option value="admin">管理员</option>
+                <option value="annotation">供应商标注员</option>
+                <option value="review">供应商审核员</option>
+                <option value="supplier_manager">供应商管理员</option>
+                <option value="admin">公司管理员</option>
               </select>
             </label>
             <button class="primary" id="nu-submit" type="submit">新增</button>
           </div>
+          <div class="row aligned-fields" id="nu-supplier-fields">
+            <label>所属供应商<select id="nu-supplier" aria-describedby="nu-supplier-help" required></select></label>
+          </div>
+          <p id="nu-supplier-help" class="muted">标注员可领取派发给所属供应商的标注任务。</p>
           <p id="nu-error" class="error" role="alert" hidden></p>
         </form>
       </div>
@@ -95,15 +109,16 @@
         </div>
         <div id="as-items" class="episode-list"></div>
         <div class="dispatch-settings">
-          <h3>任务和人员</h3>
+          <h3>任务和供应商</h3>
           <div id="as-task-options" class="task-options"><label><input type="checkbox" value="people"> 人物与对白</label><label><input type="checkbox" value="assets"> 场景道具</label><label><input type="checkbox" value="shots"> 镜头</label><label><input type="checkbox" value="story"> 剧情</label></div>
-          <div class="row" id="as-allocations"><div class="allocation" data-allocation="people" hidden><strong>人物与对白</strong><label>标注员<select data-task="people"></select></label><label>审核人<select data-reviewer="people"></select></label></div><div class="allocation" data-allocation="assets" hidden><strong>场景道具</strong><label>标注员<select data-task="assets"></select></label><label>审核人<select data-reviewer="assets"></select></label></div><div class="allocation" data-allocation="shots" hidden><strong>镜头</strong><label>标注员<select data-task="shots"></select></label><label>审核人<select data-reviewer="shots"></select></label></div><div class="allocation" data-allocation="story" hidden><strong>剧情</strong><label>标注员<select data-task="story"></select></label><label>审核人<select data-reviewer="story"></select></label></div></div>
+          <label>供应商<select id="as-supplier"></select></label>
+          <output id="dispatch-result" aria-live="polite"></output>
           <label class="priority-field">本次优先级
             <select id="as-priority"><option value="normal">普通</option><option value="high">优先</option><option value="urgent">紧急</option></select>
           </label>
         </div>
         <div class="row assignment-actions">
-          <button class="primary" id="as-submit" onclick="doAssign()" disabled>确认分配</button>
+          <button class="primary" id="as-submit" onclick="doAssign()" disabled>派发给供应商</button>
           <output id="as-selection" aria-live="polite"></output>
         </div>
       </div>
@@ -134,6 +149,10 @@
     </section>
 
     <section class="tab-panel" id="tab-reviews">
+      <details class="card" id="supplier-operations-panel">
+        <summary>供应商作业转派与抽查</summary>
+        <div id="supplier-operations"></div>
+      </details>
       <div class="card">
         <h2>审核与返修</h2>
         <label>状态<select id="review-filter">
@@ -206,6 +225,7 @@
   </dialog>
 
   <script src="/app.js"></script>
+  <script src="/supplier-stats.js"></script>
   <script src="/result-preview.js"></script>
   <script src="/delivery.js"></script>
   <script>
@@ -232,6 +252,7 @@
       const u = await me();
       if (!u || u.role !== 'admin') { window.location.href = '/login.html'; return; }
       $('who').textContent = `${u.display_name}（${u.username}）`;
+      await loadSuppliers();
       await Promise.all([loadUsers(), loadBatches(), loadIncoming()]);
       loadAssignments();
     }
@@ -243,6 +264,7 @@
         document.querySelectorAll('.tab-panel').forEach((x) => x.classList.remove('active'));
         b.classList.add('active');
         $('tab-' + b.dataset.tab).classList.add('active');
+        if (b.dataset.tab === 'stats') loadSupplierStats().catch(e => toast(e.message, true));
         if (b.dataset.tab === 'reviews') loadReviews().catch(e => toast(e.message, true));
         if (b.dataset.tab === 'results') refreshDelivery();
       });
@@ -252,19 +274,12 @@
     async function loadUsers() {
       const r = await api('/api/admin/users');
       users = r.users;
-      const annotators = users.filter((u) => u.role === 'annotator');
-      const options = annotators.map(u => `<option value="${u.id}">${esc(u.display_name)}</option>`).join('');
-      for (const select of $('as-allocations').querySelectorAll('select')) {
-        const previous = select.value;
-        const empty = select.hasAttribute('data-reviewer') ? '提交后指派' : '选择标注员';
-        select.innerHTML = '<option value="">' + empty + '</option>' + options;
-        if (annotators.some((u) => String(u.id) === previous)) select.value = previous;
-      }
       updateSelection();
-      $('users').innerHTML = '<tr><th>ID</th><th>用户名</th><th>显示名</th><th>角色</th><th>创建时间</th><th></th></tr>' +
+      $('users').innerHTML = '<tr><th>ID</th><th>用户名</th><th>显示名</th><th>角色 / 岗位</th><th>所属供应商</th><th>创建时间</th><th></th></tr>' +
         users.map((u) => `<tr>
           <td>${u.id}</td><td>${esc(u.username)}</td><td>${esc(u.display_name)}</td>
-          <td>${u.role === 'admin' ? '管理员' : '标注员'}</td>
+          <td>${u.role === 'admin' ? '公司管理员' : esc(({legacy:'历史账号',annotation:'标注员',review:'审核员',supplier_manager:'供应商管理'})[u.work_role])}</td>
+          <td>${esc(suppliers.find(s => s.id === u.supplier_id)?.name || '—')}</td>
           <td>${new Date(u.created_at).toLocaleString()}</td>
           <td><button class="small danger" onclick="delUser(${u.id})">删除</button></td>
         </tr>`).join('');
@@ -279,8 +294,11 @@
       const username = $('nu-username');
       const displayName = $('nu-name');
       const password = $('nu-password');
+      const supplier = $('nu-supplier');
+      const selectedRole = $('nu-role').value;
+      const supplierAccount = selectedRole !== 'admin';
       const fields = [username, displayName, password];
-      for (const field of fields) field.removeAttribute('aria-invalid');
+      for (const field of [...fields, supplier]) field.removeAttribute('aria-invalid');
 
       const showError = (message, field) => {
         error.hidden = false;
@@ -294,7 +312,8 @@
         username: username.value.trim(),
         display_name: displayName.value.trim(),
         password: password.value,
-        role: $('nu-role').value,
+        role: supplierAccount ? 'annotator' : 'admin',
+        ...(supplierAccount ? { supplierId: Number(supplier.value), workRole: selectedRole } : {}),
       };
       if (!/^[A-Za-z0-9._-]{2,32}$/.test(body.username)) {
         showError('用户名请输入 2–32 位英文字母、数字或 . _ -，中文姓名可填在显示名。', username);
@@ -306,6 +325,11 @@
       }
       if (body.password.length < 6) {
         showError('密码至少需要 6 位。', password);
+        return;
+      }
+
+      if (supplierAccount && !suppliers.some(org => org.id === body.supplierId)) {
+        showError(suppliers.length ? '请选择该账号的所属供应商。' : '请先在上方新增供应商，再创建供应商账号。', supplier);
         return;
       }
 
@@ -488,45 +512,72 @@
       return new Set([...$('as-task-options').querySelectorAll('input:checked')].map(input => input.value));
     }
 
+    let suppliers = [];
+    async function loadSuppliers() {
+      ({ suppliers } = await api('/api/suppliers'));
+      for (const field of ['nu-supplier', 'as-supplier']) {
+        const select = $(field);
+        const previous = select.value;
+        select.innerHTML = '<option value="">请选择供应商</option>' + suppliers.map(s =>
+          `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+        if (suppliers.some(s => String(s.id) === previous)) select.value = previous;
+      }
+      $('supplier-list').textContent = suppliers.map(s => s.name).join('、') || '暂无供应商';
+      updateSelection();
+    }
+
+    $('supplier-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector('button');
+      button.disabled = true;
+      try {
+        await api('/api/suppliers', { method: 'POST', body: { name: form.elements.name.value } });
+        form.reset();
+        await loadSuppliers();
+      } catch (error) { toast(error.message, true); }
+      finally { button.disabled = false; }
+    });
+    $('as-supplier').addEventListener('change', updateSelection);
+    function syncNewUserRole() {
+      const supplierAccount = $('nu-role').value !== 'admin';
+      $('nu-supplier-fields').hidden = !supplierAccount;
+      $('nu-supplier-help').hidden = !supplierAccount;
+      $('nu-supplier').disabled = !supplierAccount;
+      $('nu-error').hidden = true;
+    }
+    $('nu-role').addEventListener('change', syncNewUserRole);
+    syncNewUserRole();
+
     function updateSelection() {
       syncEpisodeCheckbox();
       const tasks = selectedTasks();
-      const allocations = [...$('as-allocations').querySelectorAll('[data-allocation]')];
-      for (const row of allocations) row.hidden = !tasks.has(row.dataset.allocation);
-      const ready = allocations.filter(row => !row.hidden && row.querySelector('[data-task]').value).length;
       $('as-selection').textContent = selectedEpisodes.size && tasks.size
-        ? `已选 ${selectedEpisodes.size} 集 · ${tasks.size} 个任务${ready === tasks.size ? ' · 共 ' + selectedEpisodes.size * tasks.size + ' 份作业' : ' · 请为所选任务选标注员'}`
+        ? `已选 ${selectedEpisodes.size} 集 · ${tasks.size} 类任务 · 共 ${selectedEpisodes.size * tasks.size} 份作业`
         : '请选择剧集和任务';
-      $('as-submit').disabled = assigning || itemsLoading || !selectedEpisodes.size || !tasks.size || ready !== tasks.size;
+      $('as-submit').disabled = assigning || itemsLoading || !selectedEpisodes.size || !tasks.size || !$('as-supplier').value;
     }
 
     async function doAssign() {
       if ($('as-submit').disabled) return;
       const batchId = $('as-batch').value;
-      const itemIds = [...selectedEpisodes];
-      const tasks = selectedTasks();
-      const allocations = [...$('as-allocations').querySelectorAll('[data-task]')]
-        .filter((select) => tasks.has(select.dataset.task))
-        .map((select) => ({
-          task: select.dataset.task,
-          assigneeId: Number(select.value),
-          reviewerId: Number(select.closest('.allocation').querySelector('[data-reviewer]').value) || null,
-        }));
-      if (!batchId || !itemIds.length || !allocations.length) return;
+      const body = { batchId, itemIds: [...selectedEpisodes], tasks: [...selectedTasks()],
+        supplierId: Number($('as-supplier').value), priority: $('as-priority').value };
       assigning = true;
       updateSelection();
       try {
-        const r = await api('/api/admin/assignments', { method: 'POST', body: { batchId, itemIds, allocations, priority: $('as-priority').value } });
-        toast(r.created ? `已新增 ${r.created} 份作业` : '所选作业已分配给对应标注员');
+        const preview = await api('/api/suppliers/dispatch', { method: 'POST', body: { ...body, preview: true } });
+        if (!preview.created) {
+          $('dispatch-result').textContent = `没有可派发作业，所选 ${preview.skipped.length} 份已有归属。`;
+          return;
+        }
+        if (!confirm(`派发给 ${suppliers.find(s => s.id === body.supplierId)?.name}：${preview.created} 份，跳过 ${preview.skipped.length} 份已有归属的作业。继续？`)) return;
+        const r = await api('/api/suppliers/dispatch', { method: 'POST', body });
+        $('dispatch-result').textContent = `已派发 ${r.created} 份，跳过 ${r.skipped.length} 份` +
+          (r.skipped.length ? '（已有归属：' + r.skipped.map(j => formatDramaTitle(j.title, j.itemId) + ' ' + taskTitle(j.task)).join('、') + '）' : '。');
         if ($('as-batch').value === batchId) clearEpisodes();
-        $('la-batch').value = batchId;
-        $('la-task').value = '';
-        await Promise.all([loadAssignments(), loadProgress($('progress-batch').value)]);
       } catch (e) { toast(e.message, true); }
-      finally {
-        assigning = false;
-        updateSelection();
-      }
+      finally { assigning = false; updateSelection(); }
     }
 
     async function loadAssignments() {
@@ -638,26 +689,26 @@
       const { cases } = await api('/api/reviews');
       const filter = $('review-filter').value;
       const visible = cases.filter(c => !filter || c.state === filter);
-      const canSelect = visible.some(c => c.state === 'unassigned');
+      const canSelect = visible.some(c => c.state === 'unassigned' && !c.supplier_id);
       const columnCount = canSelect ? 6 : 5;
       const statusColors = { unassigned: 'muted', review: 'info', rework: 'warn', approved: 'ok' };
       $('review-bulk-person').innerHTML = '<option value="">选择审核人</option>' + users
-        .filter(u => u.role === 'annotator').map(u => `<option value="${u.id}">${esc(u.display_name)}</option>`).join('');
+        .filter(u => u.role === 'annotator' && u.work_role === 'legacy').map(u => `<option value="${u.id}">${esc(u.display_name)}</option>`).join('');
       $('reviews').innerHTML = `<tr>${canSelect ? '<th>选择</th>' : ''}<th>剧集与任务</th><th>当前状态</th><th>标注员</th><th>下一步</th><th>操作</th></tr>` +
         (visible.map(c => {
           const owner = c.state === 'review' ? c.reviewer : c.state === 'rework' ? c.annotator : '';
-          const next = { unassigned: '选择审核人', review: '核对这一集并给出结论', rework: '修改后重新提交', approved: '查看最终结果' }[c.state];
-          const options = users.filter(u => u.role === 'annotator' && u.id !== c.assignee_id).map(u =>
+          const next = { unassigned: c.supplier_id ? '等待供应商审核员领取' : '选择审核人', review: '核对这一集并给出结论', rework: '修改后重新提交', approved: '查看最终结果' }[c.state];
+          const options = users.filter(u => u.role === 'annotator' && u.work_role === 'legacy' && u.id !== c.assignee_id).map(u =>
             `<option value="${u.id}" ${u.id === c.reviewer_id ? 'selected' : ''}>${esc(u.display_name)}</option>`
           ).join('');
-          const assign = c.state === 'unassigned' || c.state === 'review';
-          const selection = c.state === 'unassigned'
+          const assign = !c.supplier_id && (c.state === 'unassigned' || c.state === 'review');
+          const selection = c.state === 'unassigned' && !c.supplier_id
             ? `<input type="checkbox" data-review-choice value="${c.id}" aria-label="选择 ${esc(formatDramaTitle(c.title, '剧集'))} ${esc(taskTitle(c.task))}">`
             : '<span class="muted" aria-label="不可批量指派">—</span>';
           return `<tr>
             ${canSelect ? `<td>${selection}</td>` : ''}
             <td><strong>${esc(formatDramaTitle(c.title))}</strong><div class="muted">${esc(taskTitle(c.task))} · ${esc(c.batch_id)}</div></td>
-            <td><span class="badge badge-${statusColors[c.state]}">${reviewStatus[c.state]}</span>${owner ? ' ' + esc(owner) : ''} ${priorityBadge(c.priority)}</td><td>${esc(c.annotator)}</td>
+            <td><span class="badge badge-${statusColors[c.state]}">${c.supplier_id && c.state === 'unassigned' ? '待审核领取' : reviewStatus[c.state]}</span>${owner ? ' ' + esc(owner) : ''} ${priorityBadge(c.priority)}</td><td>${esc(c.annotator)}</td>
             <td>${next}${c.note ? c.state === 'rework'
               ? `<div class="rework-reason"><strong>返修原因</strong><span>${esc(c.note)}</span></div>`
               : `<div class="review-note">${esc(c.note)}</div>`
@@ -728,6 +779,9 @@
       if ($('result-archive').open) loadResults().catch(e => toast(e.message, true));
     });
 
+    $('supplier-operations-panel').addEventListener('toggle', event => {
+      if (event.currentTarget.open) loadSupplierOperations().catch(e => toast(e.message, true));
+    });
     $('new-user').addEventListener('submit', addUser);
     $('progress-batch').addEventListener('change', (e) => loadProgress(e.target.value));
     $('as-batch').addEventListener('change', loadItems);
@@ -743,7 +797,7 @@
     $('as-search').addEventListener('input', renderEpisodes);
     $('as-language').addEventListener('change', renderEpisodes);
     $('as-task-options').addEventListener('change', updateSelection);
-    $('as-allocations').addEventListener('change', updateSelection);
+
 
     init().catch((e) => toast(e.message, true));
   </script>

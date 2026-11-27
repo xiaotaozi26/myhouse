@@ -14,6 +14,8 @@
       const u = await me();
       if (!u) window.location.href = '/login.html';
       else if (u.role === 'admin') window.location.href = '/admin.html';
+      else if (u.work_role === 'supplier_manager') window.location.href = '/supplier.html';
+      else if (u.work_role === 'review') window.location.href = '/reviewer.html';
       else window.location.href = '/annotator.html';
     })();
   </script>

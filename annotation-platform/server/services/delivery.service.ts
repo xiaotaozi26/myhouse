@@ -1,11 +1,11 @@
 import { TASK_KEYS, type TaskKey } from '../config.ts';
 import { getDb, transaction } from '../db.ts';
 
-type TaskStatus = 'unallocated' | 'annotating' | 'unassigned' | 'review' | 'rework' | 'approved';
+type TaskStatus = 'unallocated' | 'unclaimed' | 'annotating' | 'unassigned' | 'review' | 'rework' | 'approved';
 type Priority = 'normal' | 'high' | 'urgent';
 
 interface Assignment {
-  id: number;
+  id: number | null;
   item_id: string;
   task: TaskKey;
   state: TaskStatus;
@@ -39,16 +39,21 @@ export function deliveryProgress(batchId: string) {
   const configured = new Set(db.prepare(
     'SELECT task FROM batch_delivery_tasks WHERE batch_id = ?',
   ).all(batchId).map(row => row.task));
-  const inferred = new Set(assigned.map(row => row.task));
+  const pending = db.prepare(`SELECT NULL AS id, item_id, task, priority, 'unclaimed' AS state, NULL AS reviewer,
+      NULL AS annotator, 0 AS version, NULL AS note FROM supplier_jobs WHERE batch_id = ? AND assignment_id IS NULL`)
+    .all(batchId) as unknown as Assignment[];
+  const inferred = new Set([...assigned, ...pending].map(row => row.task));
   const requiredTasks = TASK_KEYS.filter(task => (configured.size ? configured : inferred).has(task));
   const byEpisode = new Map<string, Map<TaskKey, Assignment>>();
-  for (const assignment of assigned) {
+  for (const assignment of [...assigned, ...pending]) {
     if (!TASK_KEYS.includes(assignment.task)) continue;
     const existing = byEpisode.get(assignment.item_id) || new Map<TaskKey, Assignment>();
     // Existing databases may contain more than one assignee per task. Prefer the latest review version.
     if (!existing.has(assignment.task)) existing.set(assignment.task, assignment);
     byEpisode.set(assignment.item_id, existing);
   }
+  const confirmed = new Map(db.prepare(`SELECT item_id, manifest, created_at FROM delivery_confirmations
+    WHERE batch_id = ?`).all(batchId).map(row => [JSON.stringify([row.item_id,row.manifest]), row.created_at]));
   const rows = episodes.map(episode => {
     const assignedTasks = byEpisode.get(String(episode.item_id));
     const tasks = TASK_KEYS.map(task => {
@@ -57,8 +62,12 @@ export function deliveryProgress(batchId: string) {
       if (work) return { ...work, required };
       return { task, required, state: required ? 'unallocated' : 'out_of_scope' };
     });
-    return { ...episode, tasks, ready: requiredTasks.length > 0 &&
-      requiredTasks.every(task => assignedTasks?.get(task)?.state === 'approved') };
+    const ready = requiredTasks.length > 0 && requiredTasks.every(task => assignedTasks?.get(task)?.state === 'approved');
+    const manifest = ready && configured.size ? JSON.stringify(tasks.filter(t => t.required).map(t => {
+      const work = assignedTasks!.get(t.task)!;
+      return [work.task, work.id, work.version];
+    })) : null;
+    return { item_id: episode.item_id, title: episode.title, episode_id: episode.episode_id, tasks, ready, manifest, confirmedAt: confirmed.get(JSON.stringify([episode.item_id,manifest])) ?? null };
   });
   const states = rows.flatMap(row => row.tasks);
   return {
@@ -83,5 +92,16 @@ export function setDeliveryTasks(batchId: string, tasks: unknown) {
     db.prepare('DELETE FROM batch_delivery_tasks WHERE batch_id = ?').run(batchId);
     const insert = db.prepare('INSERT INTO batch_delivery_tasks (batch_id, task) VALUES (?, ?)');
     for (const task of new Set(tasks)) insert.run(batchId, task);
+  });
+}
+
+
+export function confirmDelivery(batchId: string, itemId: string, manifest: unknown, actorId: number) {
+  return transaction(db => {
+    const row = deliveryProgress(batchId).rows.find(item => item.item_id === itemId);
+    if (!row?.manifest || row.manifest !== manifest) throw new Error('交付范围或审核结果已变更，请刷新后确认');
+    db.prepare(`INSERT INTO delivery_confirmations(batch_id,item_id,manifest,actor_id,created_at)
+      VALUES (?,?,?,?,?) ON CONFLICT DO NOTHING`).run(batchId,itemId,row.manifest,actorId,new Date().toISOString());
+    return { ok: true };
   });
 }

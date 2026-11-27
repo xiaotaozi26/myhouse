@@ -1,6 +1,6 @@
 import express from 'express';
 import type { Request, Response } from 'express';
-import { getDb } from '../db.ts';
+import { getDb, type UserRow } from '../db.ts';
 import {
   clearSessionCookie,
   createSession,
@@ -22,7 +22,7 @@ authRouter.post('/login', (req: Request, res: Response) => {
     return;
   }
   const user = getDb().prepare('SELECT * FROM users WHERE username = ?').get(username) as
-    | { id: number; password_hash: string; username: string; display_name: string; role: string }
+    | UserRow
     | undefined;
   if (!user || !verifyPassword(password, user.password_hash)) {
     res.status(401).json({ error: '用户名或密码错误' });
@@ -30,7 +30,7 @@ authRouter.post('/login', (req: Request, res: Response) => {
   }
   const { token, expiresAt } = createSession(user.id);
   setSessionCookie(res, token, expiresAt);
-  res.json({ user: { id: user.id, username: user.username, display_name: user.display_name, role: user.role } });
+  res.json({ user: { id: user.id, username: user.username, display_name: user.display_name, role: user.role, work_role: user.work_role, supplier_id: user.supplier_id } });
 });
 
 authRouter.post('/logout', (req: Request, res: Response) => {
@@ -49,7 +49,7 @@ authRouter.get('/me', (req: Request, res: Response) => {
     res.status(401).json({ error: '未登录' });
     return;
   }
-  res.json({ user: { id: user.id, username: user.username, display_name: user.display_name, role: user.role } });
+  res.json({ user: { id: user.id, username: user.username, display_name: user.display_name, role: user.role, work_role: user.work_role, supplier_id: user.supplier_id } });
 });
 
 authRouter.post('/change-password', requireAuth, (req: Request, res: Response) => {

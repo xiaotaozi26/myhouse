@@ -1,5 +1,6 @@
 const deliveryTitles = { people: '人物与对白', assets: '场景道具', shots: '镜头', story: '剧情' };
 const deliveryStates = {
+  unclaimed: ['待领取', 'muted'],
   unallocated: ['待分配', 'muted'],
   annotating: ['标注中', 'info'],
   unassigned: ['待指派审核', 'warn'],
@@ -13,6 +14,7 @@ let deliveryDetailRequest = 0;
 
 function deliveryNext(task) {
   switch (task.state) {
+    case 'unclaimed': return '供应商标注员领取';
     case 'unallocated': return '管理员分配标注';
     case 'unassigned': return '管理员指派审核';
     case 'annotating': return (task.annotator || '标注员') + '标注';
@@ -48,12 +50,13 @@ function renderDeliveryGrid() {
   const columns = Object.entries(deliveryTitles).map(([task, title]) => `<th${deliveryData.requiredTasks.includes(task) ? '' : ' class="muted"'}>${title}</th>`);
   $('delivery-grid').innerHTML = '<thead><tr><th>剧集</th>' + columns.join('') + '<th>下一步</th></tr></thead><tbody>' +
     (rows.map(({ row, rowIndex }) => {
-      const next = row.tasks.map(task => ({ task, action: deliveryNext(task) })).filter(({ action }) => action);
+      const next = (row.ready ? [] : row.tasks).map(task => ({ task, action: deliveryNext(task) })).filter(({ action }) => action);
       return `<tr><th scope="row">${esc(resultEpisodeLabel(row))}</th>
         ${row.tasks.map((task, taskIndex) => `<td>${deliveryCell(task, rowIndex, taskIndex)}</td>`).join('')}
         <td>${next.length ? next.map(({ task, action }) =>
           `<div>${esc(action)} <span class="muted">· ${deliveryTitles[task.task]}</span></div>`).join('')
-          : row.ready ? '<span class="badge badge-ok">可交付</span>' : '—'}</td></tr>`;
+          : row.ready ? (row.confirmedAt ? '<span class="badge badge-ok">已确认交付</span>' :
+            '<span class="badge badge-ok">可交付</span>' + (row.manifest ? ` <button class="small" type="button" data-confirm-delivery="${rowIndex}">确认交付</button>` : '')) : '—'}</td></tr>`;
     }).join('') || '<tr><td colspan="6" class="muted">没有符合条件的剧集。</td></tr>') + '</tbody>';
 }
 
@@ -118,6 +121,20 @@ $('delivery-scope-form').addEventListener('submit', async event => {
 });
 
 $('delivery-grid').addEventListener('click', async event => {
+  const confirmButton = event.target.closest('[data-confirm-delivery]');
+  if (confirmButton && deliveryData) {
+    const row = deliveryData.rows[Number(confirmButton.dataset.confirmDelivery)];
+    if (!confirm('确认交付 ' + resultEpisodeLabel(row) + ' 的当前通过稿？')) return;
+    confirmButton.disabled = true;
+    try {
+      await api('/api/admin/batches/' + encodeURIComponent($('rs-batch').value) + '/delivery/confirm', {
+        method: 'POST', body: { itemId: row.item_id, manifest: row.manifest },
+      });
+      await refreshDelivery();
+    } catch (error) { toast(error.message, true); }
+    finally { confirmButton.disabled = false; }
+    return;
+  }
   const button = event.target.closest('[data-delivery-row]');
   if (!button || !deliveryData) return;
   const row = deliveryData.rows[Number(button.dataset.deliveryRow)];

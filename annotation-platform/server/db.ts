@@ -153,6 +153,53 @@ function migrate(d: DatabaseSync): void {
     CREATE INDEX IF NOT EXISTS idx_assignments_batch ON assignments (batch_id);
     CREATE INDEX IF NOT EXISTS idx_results_batch ON results (batch_id);
   `);
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE
+    );
+    CREATE TABLE IF NOT EXISTS supplier_jobs (
+      id INTEGER PRIMARY KEY,
+      supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+      batch_id TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      task TEXT NOT NULL,
+      priority TEXT NOT NULL,
+      dispatched_at TEXT NOT NULL,
+      assignment_id INTEGER UNIQUE REFERENCES assignments(id) ON DELETE SET NULL,
+      started_at TEXT,
+      review_started_at TEXT,
+      rework_started_at TEXT,
+      UNIQUE (batch_id, item_id, task),
+      FOREIGN KEY (batch_id, item_id) REFERENCES batch_items(batch_id, item_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_supplier_jobs_org ON supplier_jobs(supplier_id);
+    CREATE TABLE IF NOT EXISTS supplier_transfers (
+      id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL REFERENCES supplier_jobs(id),
+      stage TEXT NOT NULL, previous_id INTEGER, next_id INTEGER NOT NULL,
+      operator_id INTEGER NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS delivery_confirmations (
+      batch_id TEXT NOT NULL, item_id TEXT NOT NULL, manifest TEXT NOT NULL,
+      actor_id INTEGER NOT NULL, created_at TEXT NOT NULL,
+      PRIMARY KEY (batch_id, item_id, manifest)
+    );
+    CREATE TABLE IF NOT EXISTS company_checks (
+      id INTEGER PRIMARY KEY, assignment_id INTEGER NOT NULL REFERENCES assignments(id),
+      version INTEGER NOT NULL, actor_id INTEGER NOT NULL, outcome TEXT NOT NULL,
+      note TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS supplier_review_timings (
+      assignment_id INTEGER NOT NULL, version INTEGER NOT NULL, elapsed_seconds INTEGER NOT NULL,
+      PRIMARY KEY (assignment_id, version)
+    );
+  `);
+  const users = d.prepare('PRAGMA table_info(users)').all();
+  if (!users.some(column => column.name === 'supplier_id')) {
+    d.exec('ALTER TABLE users ADD COLUMN supplier_id INTEGER REFERENCES suppliers(id)');
+  }
+  if (!users.some(column => column.name === 'work_role')) {
+    d.exec("ALTER TABLE users ADD COLUMN work_role TEXT NOT NULL DEFAULT 'legacy'");
+  }
   const columns = d.prepare('PRAGMA table_info(assignments)').all();
   if (!columns.some(column => column.name === 'priority')) {
     d.exec("ALTER TABLE assignments ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('normal', 'high', 'urgent'))");
@@ -166,6 +213,8 @@ export interface UserRow {
   display_name: string;
   role: 'admin' | 'annotator';
   created_at: string;
+  supplier_id: number | null;
+  work_role: 'legacy' | 'annotation' | 'review' | 'supplier_manager';
 }
 
 export interface AssignmentRow {

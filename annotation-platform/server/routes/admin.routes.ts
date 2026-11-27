@@ -4,7 +4,7 @@ import { getDb } from '../db.ts';
 import { hashPassword, requireAdmin, type AuthedRequest } from '../auth.ts';
 import { TASKS, TASK_KEYS, MODES, type Mode, type TaskKey } from '../config.ts';
 import { importBatch, listBatches, listIncoming } from '../services/batch.service.ts';
-import { deliveryProgress, setDeliveryTasks } from '../services/delivery.service.ts';
+import { confirmDelivery, deliveryProgress, setDeliveryTasks } from '../services/delivery.service.ts';
 import {
   createAssignments,
   deleteAssignment,
@@ -21,7 +21,7 @@ adminRouter.use(requireAdmin);
 
 adminRouter.get('/users', (_req: Request, res: Response) => {
   const users = getDb()
-    .prepare('SELECT id, username, display_name, role, created_at FROM users ORDER BY id')
+    .prepare('SELECT id, username, display_name, role, created_at, supplier_id, work_role FROM users ORDER BY id')
     .all();
   res.json({ users });
 });
@@ -44,14 +44,23 @@ adminRouter.post('/users', (req: Request, res: Response) => {
     res.status(400).json({ error: '角色非法' });
     return;
   }
+  const supplierId = Number(req.body.supplierId) || null;
+  const workRole = req.body.workRole || 'legacy';
+  if (!['legacy', 'annotation', 'review', 'supplier_manager'].includes(workRole) ||
+      (workRole === 'legacy' && supplierId !== null) ||
+      (workRole !== 'legacy' && (role !== 'annotator' || !supplierId ||
+        !getDb().prepare('SELECT 1 FROM suppliers WHERE id = ?').get(supplierId)))) {
+    res.status(400).json({ error: '供应商账号须选择有效供应商及岗位' });
+    return;
+  }
   const exists = getDb().prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (exists) {
     res.status(409).json({ error: '用户名已存在' });
     return;
   }
   const r = getDb()
-    .prepare('INSERT INTO users (username, password_hash, display_name, role, created_at) VALUES (?, ?, ?, ?, ?)')
-    .run(username, hashPassword(password), display_name, role, new Date().toISOString());
+    .prepare('INSERT INTO users (username, password_hash, display_name, role, created_at, supplier_id, work_role) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(username, hashPassword(password), display_name, role, new Date().toISOString(), supplierId, workRole);
   res.json({ id: Number(r.lastInsertRowid) });
 });
 
@@ -218,6 +227,12 @@ adminRouter.get('/batches/:id/delivery', (req: Request, res: Response) => {
   } catch (e) {
     res.status(400).json({ error: (e as Error).message });
   }
+});
+
+adminRouter.post('/batches/:id/delivery/confirm', (req, res) => {
+  try {
+    res.json(confirmDelivery(String(req.params.id), req.body?.itemId, req.body?.manifest, (req as unknown as AuthedRequest).user.id));
+  } catch (error) { res.status(400).json({ error: (error as Error).message }); }
 });
 
 adminRouter.put('/batches/:id/delivery', (req: Request, res: Response) => {

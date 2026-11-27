@@ -29,11 +29,11 @@
       button.textContent = '正在登录…';
       err.hidden = true;
       try {
-        const r = await api('/api/auth/login', {
+        await api('/api/auth/login', {
           method: 'POST',
           body: { username: $('username').value.trim(), password: $('password').value },
         });
-        window.location.href = r.user.role === 'admin' ? '/admin.html' : '/annotator.html';
+        window.location.href = '/';
       } catch (ex) {
         err.textContent = ex.message;
         err.hidden = false;

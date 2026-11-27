@@ -45,7 +45,8 @@ export function createAssignments(
       return { id, title: row.title || id };
     });
 
-    const user = db.prepare("SELECT id FROM users WHERE id = ? AND role = 'annotator'");
+    const user = db.prepare("SELECT id FROM users WHERE id = ? AND role = 'annotator' AND work_role = 'legacy'");
+    const dispatched = db.prepare('SELECT 1 FROM supplier_jobs WHERE batch_id = ? AND task = ? AND item_id = ?');
     const existing = db.prepare('SELECT mode, assignee_id FROM assignments WHERE batch_id = ? AND task = ? AND item_id = ?');
     const insert = db.prepare(
       `INSERT INTO assignments (batch_id, task, mode, item_id, assignee_id, status, priority, assigned_at)
@@ -59,6 +60,7 @@ export function createAssignments(
       if (reviewerId != null && (!Number.isSafeInteger(reviewerId) || !user.get(reviewerId))) throw new Error('复核人不存在');
       if (reviewerId === assigneeId) throw new Error('复核人和标注员须由不同人员担任');
       for (const { id, title } of entries) {
+        if (dispatched.get(batchId, task, id)) throw new Error('该作业已派发至供应商');
         const rows = existing.all(batchId, task, id);
         const label = `${TASKS[task].title} · ${title}`;
         if (rows.some((row) => row.mode === mode && row.assignee_id !== assigneeId)) {
@@ -85,6 +87,9 @@ export function updateAssignments(ids: unknown, action: unknown, priority?: unkn
     const prioritize = db.prepare("UPDATE assignments SET priority = ? WHERE id = ? AND mode = 'primary'");
     let changed = 0;
     for (const id of new Set<number>(ids)) {
+      const managed = db.prepare('SELECT 1 FROM supplier_jobs WHERE assignment_id = ?').get(id);
+      if (managed && !value) throw new Error('供应商作业须通过释放或转派调整');
+      if (managed) db.prepare('UPDATE supplier_jobs SET priority = ? WHERE assignment_id = ?').run(value, id);
       const result = value ? prioritize.run(value, id) : remove.run(id);
       if (!result.changes) throw new Error(value ? '部分分配已变更，请刷新后重试' : '部分作业已提交或已移除，本次移除未执行');
       changed++;
@@ -103,6 +108,8 @@ export interface AssignmentView extends AssignmentRow {
   second_review: number;
   username: string;
   display_name: string;
+  supplier_job_id: number | null;
+  started_at: string | null;
 }
 
 export function listAssignments(filter: {
@@ -132,8 +139,9 @@ export function listAssignments(filter: {
   const where = clauses.length ? 'WHERE ' + clauses.join(' AND ') : '';
   return getDb()
     .prepare(
-      `SELECT a.*, i.title, i.lang, i.second_review, u.username, u.display_name
+      `SELECT a.*, i.title, i.lang, i.second_review, u.username, u.display_name, j.id AS supplier_job_id, j.started_at
        FROM assignments a
+       LEFT JOIN supplier_jobs j ON j.assignment_id = a.id
        JOIN batch_items i ON i.batch_id = a.batch_id AND i.item_id = a.item_id
        JOIN users u ON u.id = a.assignee_id
        ${where}
@@ -152,6 +160,8 @@ export interface JobItem {
   status: 'assigned' | 'submitted';
   priority: Priority;
   submitted_at: string | null;
+  supplier_job_id: number | null;
+  started_at: string | null;
 }
 
 export interface Job {
@@ -189,6 +199,7 @@ export function myJobs(userId: number): Job[] {
       status: r.status,
       priority: r.priority,
       submitted_at: r.submitted_at,
+      supplier_job_id: r.supplier_job_id, started_at: r.started_at,
     });
   }
   for (const job of byKey.values()) {
@@ -198,13 +209,17 @@ export function myJobs(userId: number): Job[] {
   return [...byKey.values()].sort((a, b) => pendingRank(b) - pendingRank(a) || `${a.batch_id}${a.task}${a.mode}`.localeCompare(`${b.batch_id}${b.task}${b.mode}`));
 }
 
-export function jobData(batchId: string, task: TaskKey, mode: Mode, userId: number): { jsonl: string; count: number } {
-  const rows = listAssignments({ batchId, task, mode, assigneeId: userId });
+export function jobData(batchId: string, task: TaskKey, mode: Mode, userId: number, itemId?: string): { jsonl: string; count: number; draftScope: string } {
+  const rows = listAssignments({ batchId, task, mode, assigneeId: userId }).filter(row => !itemId || row.item_id === itemId);
   if (!rows.length) throw new Error('该作业没有分配给你');
   const ids = new Set(rows.map((r) => r.item_id));
   const pendingPriority = new Map(rows.filter(row => row.status === 'assigned').map(row => [row.item_id, rank[row.priority]]));
   const jsonl = buildSlice(batchId, mode, ids, task, pendingPriority);
-  return { jsonl, count: rows.length };
+  const start = getDb().prepare(`UPDATE supplier_jobs SET started_at = ? WHERE assignment_id = ?
+    AND started_at IS NULL AND EXISTS (SELECT 1 FROM assignments WHERE id = ? AND assignee_id = ?)`);
+  for (const row of rows) start.run(new Date().toISOString(), row.id, row.id, userId);
+  const draftScope = rows.some(row => row.supplier_job_id) ? rows.map(row => row.id + ':' + row.assigned_at).sort().join(',') : '';
+  return { jsonl, count: rows.length, draftScope };
 }
 
 // ---------- result submission ----------

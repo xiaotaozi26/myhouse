@@ -8,7 +8,7 @@
 </head>
 <body>
   <div class="topbar">
-    <div class="brand">AI短剧标注平台 · 我的任务</div>
+    <div class="brand" id="work-brand">AI短剧标注平台 · 我的任务</div>
     <div>
       <span class="who" id="who"></span>
       <button onclick="logout()">退出</button>
@@ -16,20 +16,100 @@
   </div>
 
   <div class="wrap">
-    <div class="helpbox">
+    <div class="helpbox" id="work-help">
       点「打开标注页」开始。核对完一集后点「完成并提交」。
     </div>
-    <section class="card" aria-labelledby="annotation-jobs-title">
+    <section class="card" id="pool-section" hidden>
+      <div class="row aligned-fields"><h2 id="pool-title"></h2>
+      <label>任务类型<select id="pool-task"><option value="">全部任务</option></select></label>
+      <button type="button" id="pool-refresh">刷新</button></div>
+      <div id="pool-jobs"></div>
+    </section>
+    <section class="card" id="annotation-section" aria-labelledby="annotation-jobs-title">
       <h2 id="annotation-jobs-title">标注任务</h2>
       <div id="jobs"></div>
     </section>
-    <section class="card" id="review-inbox"><h2>审核与返修</h2><div id="my-reviews"></div></section>
+    <section class="card" id="review-inbox"><h2 id="work-inbox-title">审核与返修</h2><div id="my-reviews"></div></section>
     <section class="card" id="completed-review-section" hidden><h2>已审核</h2><div id="completed-reviews"></div></section>
   </div>
 
   <script src="/app.js"></script>
   <script>
     let jobs = [];
+    let workRole = 'legacy';
+    let pool = [];
+    function poolLink(job, assignmentId) {
+      const query = workRole === 'review'
+        ? new URLSearchParams({ review: assignmentId })
+        : new URLSearchParams({ batchId: job.batch_id, mode: 'primary', item: job.item_id });
+      return '/annotate/' + annotationPages[job.task] + '?' + query;
+    }
+    const isRecheck = job => job.kind === 'reworked';
+
+    function renderReviewGroups(rows, renderCard, groups) {
+      const rechecks = rows.filter(isRecheck);
+      const firstReviews = rows.filter(job => !isRecheck(job));
+      return `<div class="review-stage-grid">${[firstReviews, rechecks].map((items, index) => {
+        const [title, empty] = groups[index];
+        return `<section class="review-stage" aria-label="${title}">
+          <h3>${title} <span class="badge badge-muted">${items.length}</span></h3>
+          ${items.length ? items.map(renderCard).join('') : `<p class="muted">${empty}</p>`}
+        </section>`;
+      }).join('')}</div>`;
+    }
+
+    function poolCard(job) {
+      const reviewer = workRole === 'review';
+      const action = reviewer ? (isRecheck(job) ? '开始复审' : '领取首审') : '领取并打开';
+      return `<article class="card review-inbox-item"><div>
+        <h4>${esc(formatDramaTitle(job.title, job.item_id))}</h4>
+        <p class="muted">${esc(taskTitle(job.task))} · ${esc(job.batch_id)} ${priorityBadge(job.priority)}
+          ${reviewer ? ' · 标注员 ' + esc(job.annotator) : ''}</p>
+        <p class="muted">等待 ${age(job.last_event || job.dispatched_at)}</p>
+        </div><button type="button" class="primary" data-claim="${job.id}">${action}</button></article>`;
+    }
+
+    function renderPool() {
+      const task = $('pool-task').value;
+      const rows = pool.filter(job => !task || job.task === task);
+      $('pool-jobs').innerHTML = workRole === 'review'
+        ? renderReviewGroups(rows, poolCard, [
+            ['待首审', '暂无标注完成后待首次审核的作业。'],
+            ['待复审', '暂无返修后待审核的作业。'],
+          ])
+        : rows.length ? rows.map(poolCard).join('') : '<p class="muted">暂无符合条件的可领取作业。</p>';
+    }
+    async function loadPool() {
+      ({ jobs: pool } = await api('/api/suppliers/pool'));
+      renderPool();
+    }
+    $('pool-task').innerHTML += Object.keys(annotationPages).map(task => `<option value="${task}">${taskTitle(task)}</option>`).join('');
+    $('pool-task').addEventListener('change', renderPool);
+    $('pool-refresh').addEventListener('click', () => loadPool().catch(error => toast(error.message, true)));
+    $('pool-jobs').addEventListener('click', async event => {
+      const button = event.target.closest('[data-claim]');
+      if (!button) return;
+      const job = pool.find(j => j.id === Number(button.dataset.claim));
+      if (!job) return;
+      button.disabled = true;
+      try {
+        const { assignmentId } = await api('/api/suppliers/jobs/' + job.id + '/claim', { method: 'POST' });
+        location.href = poolLink(job, assignmentId);
+      } catch (error) {
+        toast(error.message, true);
+        await loadPool().catch(() => {});
+      } finally { button.disabled = false; }
+    });
+    $('jobs').addEventListener('click', async event => {
+      const button = event.target.closest('[data-release]');
+      if (!button) return;
+      button.disabled = true;
+      try {
+        await api('/api/suppliers/jobs/' + button.dataset.release + '/release', { method: 'POST' });
+        await Promise.all([load(), loadPool()]);
+      } catch (error) { toast(error.message, true); }
+      finally { button.disabled = false; }
+    });
 
     function itemRow(i, job) {
       const query = new URLSearchParams({ batchId: job.batch_id, mode: job.mode, item: i.item_id });
@@ -40,7 +120,8 @@
       return `<div class="kv" style="grid-template-columns:1fr auto auto">
         <dd>${esc(formatDramaTitle(i.title, i.item_id))} <span class="muted">${languageName(i.lang)}</span> ${priorityBadge(i.priority)}</dd>
         <dd>${st}</dd>
-        <dd>${i.status === 'assigned' ? `<a href="${esc(open)}" target="_blank" rel="noopener">打开本集</a>` : ''}</dd>
+        <dd>${i.status === 'assigned' ? `<a href="${esc(open)}" target="_blank" rel="noopener">打开本集</a>` : ''}
+          ${i.supplier_job_id && !i.started_at && i.status === 'assigned' ? `<button type="button" class="small" data-release="${i.supplier_job_id}">释放</button>` : ''}</dd>
       </div>`;
     }
 
@@ -66,17 +147,21 @@
     }
 
     async function loadReviewInbox() {
-      const { cases, completed = [] } = await api('/api/reviews?includeCompleted=1');
-      $('my-reviews').innerHTML = cases.length ? cases.map(c => `<div class="card review-inbox-item">
+      const { cases: allCases, completed = [] } = await api('/api/reviews?includeCompleted=1');
+      const cases = allCases.filter(c => workRole === 'legacy' || (workRole === 'review' ? c.state === 'review' : c.state === 'rework'));
+      const renderCard = c => `<article class="card review-inbox-item">
         <div class="review-inbox-detail">
-          <h3>${esc(formatDramaTitle(c.title))}</h3>
+          <h4>${esc(formatDramaTitle(c.title))}</h4>
           <p>${esc(taskTitle(c.task))}${c.state === 'review' ? ' · 标注员 ' + esc(c.annotator) : ''}
-            <span class="badge badge-muted">${c.state === 'review' ? '待审核' : '待返修'}</span> ${priorityBadge(c.priority)}</p>
+            <span class="badge badge-muted">${c.state === 'review' ? (isRecheck(c) ? '复审中' : '首审中') : '待返修'}</span> ${priorityBadge(c.priority)}</p>
           ${c.note ? '<p class="review-note">退回原因 · ' + esc(c.note) + '</p>' : ''}
         </div>
-        <a class="btn-like" href="/annotate/${annotationPages[c.task]}?review=${c.id}">${c.state === 'review' ? '打开审核' : '打开返修'}</a>
-      </div>`).join('') : '<p class="muted">暂无审核或返修待办。</p>';
-      $('completed-review-section').hidden = !completed.length;
+        <a class="btn-like" href="/annotate/${annotationPages[c.task]}?review=${c.id}">${c.state === 'review' ? (isRecheck(c) ? '继续复审' : '继续首审') : '打开返修'}</a>
+      </article>`;
+      $('my-reviews').innerHTML = workRole === 'review'
+        ? renderReviewGroups(cases, renderCard, [['首审中','暂无已领取的首审作业。'], ['复审中','暂无已领取的复审作业。']])
+        : cases.length ? cases.map(renderCard).join('') : '<p class="muted">暂无审核或返修待办。</p>';
+      $('completed-review-section').hidden = workRole === 'annotation' || !completed.length;
       $('completed-reviews').innerHTML = completed.map(c => `<div class="kv" style="grid-template-columns:1fr auto">
         <dd><strong>${esc(formatDramaTitle(c.title))}</strong> <span class="muted">${esc(taskTitle(c.task))}</span></dd>
         <dd>${c.state === 'approved' ? '<span class="badge badge-ok">已审核</span>' : '<span class="badge badge-warn">已退回</span>'}</dd>
@@ -87,15 +172,30 @@
     (async () => {
       const u = await me();
       if (!u) { window.location.href = '/login.html'; return; }
-      if (u.role === 'admin') { window.location.href = '/admin.html'; return; }
+      if (u.role === 'admin' || u.work_role === 'supplier_manager') { location.replace('/'); return; }
+      workRole = u.work_role || 'legacy';
+      const reviewer = workRole === 'review';
+      if (reviewer && location.pathname !== '/reviewer.html') { location.replace('/reviewer.html'); return; }
+      if (!reviewer && location.pathname === '/reviewer.html') { location.replace('/annotator.html'); return; }
       $('who').textContent = u.display_name;
-      await Promise.all([load(), loadReviewInbox()]);
+      if (workRole !== 'legacy') {
+        $('work-brand').textContent = reviewer ? 'AI短剧标注平台 · 审核工作台' : 'AI短剧标注平台 · 标注工作台';
+        document.title = $('work-brand').textContent;
+        $('work-help').textContent = reviewer
+          ? '继续在审作业，或从任务池领取首审和返修后的复审。'
+          : '继续已领取的标注和返修，或从任务池领取新作业。';
+        $('annotation-section').hidden = reviewer;
+        $('annotation-jobs-title').textContent = '继续标注';
+        $('work-inbox-title').textContent = reviewer ? '继续审核' : '待返修';
+        $('pool-section').hidden = false;
+        $('pool-title').textContent = reviewer ? '领取审核任务' : '领取新任务';
+      }
+      const refresh = () => Promise.all([reviewer ? undefined : load(), loadReviewInbox(), workRole === 'legacy' ? undefined : loadPool()]);
+      await refresh();
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-          Promise.all([load(), loadReviewInbox()]).catch(console.error);
-        }
+        if (document.visibilityState === 'visible') refresh().catch(error => toast(error.message, true));
       });
-    })().catch(console.error);
+    })().catch(error => toast(error.message, true));
   </script>
 </body>
 </html>

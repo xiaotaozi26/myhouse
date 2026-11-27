@@ -9,6 +9,7 @@ import { authRouter } from './routes/auth.routes.ts';
 import { adminRouter } from './routes/admin.routes.ts';
 import { annotatorRouter } from './routes/annotator.routes.ts';
 
+import { supplierRouter } from './routes/supplier.routes.ts';
 import { reviewRouter } from './routes/review.routes.ts';
 
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -20,6 +21,7 @@ app.use(express.json({ limit: '100mb' }));
 
 // Static: vendored annotation pages under /annotate/<task>.html, portal under /.
 app.use('/annotate', express.static(VENDOR_DIR));
+app.get('/reviewer.html', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'annotator.html')));
 app.use(express.static(PUBLIC_DIR));
 
 // ---------- API ----------
@@ -32,6 +34,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/annotator', annotatorRouter);
 app.use('/api/reviews', reviewRouter);
+app.use('/api/suppliers', supplierRouter);
 
 // Fallback for unknown API paths.
 app.use('/api', (_req: Request, res: Response) => {

@@ -22,6 +22,8 @@ interface ReviewCase {
   version: number;
   note: string | null;
   kind: Kind | null;
+  supplier_id: number | null;
+  review_started_at: string | null;
 }
 
 interface Version {
@@ -88,11 +90,12 @@ function returnedEpisode(previous: ResultEpisode, feedback: ReturnFeedback, user
 
 const cases = `SELECT a.id, a.batch_id, a.task, a.item_id, a.assignee_id, a.priority, i.title,
   writer.display_name AS annotator, reader.display_name AS reviewer, w.reviewer_id,
-  COALESCE(w.state, 'assigned') AS state, COALESCE(w.version, 0) AS version, v.note, v.kind
+  j.supplier_id, j.review_started_at, COALESCE(w.state, 'assigned') AS state, COALESCE(w.version, 0) AS version, v.note, v.kind
   FROM assignments a
   JOIN batch_items i ON i.batch_id = a.batch_id AND i.item_id = a.item_id
   JOIN users writer ON writer.id = a.assignee_id
   LEFT JOIN assignment_reviews w ON w.assignment_id = a.id
+  LEFT JOIN supplier_jobs j ON j.assignment_id = a.id
   LEFT JOIN users reader ON reader.id = w.reviewer_id
   LEFT JOIN review_versions v ON v.assignment_id = a.id AND v.version = w.version
   WHERE a.mode = 'primary'`;
@@ -106,7 +109,7 @@ function getCase(id: number): ReviewCase {
 export function listReviewCases(user: UserRow): ReviewCase[] {
   const byPriority = "CASE a.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 ELSE 2 END, i.title";
   const all = cases + " AND w.version > 0 ORDER BY CASE w.state WHEN 'unassigned' THEN 0 WHEN 'review' THEN 1 WHEN 'rework' THEN 2 ELSE 3 END, " + byPriority;
-  const mine = cases + " AND ((w.state = 'review' AND w.reviewer_id = ?) OR (w.state = 'rework' AND a.assignee_id = ?)) ORDER BY " + byPriority;
+  const mine = cases + " AND ((w.state = 'review' AND w.reviewer_id = ? AND (j.id IS NULL OR j.review_started_at IS NOT NULL)) OR (w.state = 'rework' AND a.assignee_id = ?)) ORDER BY " + byPriority;
   return (user.role === 'admin' ? getDb().prepare(all).all() : getDb().prepare(mine).all(user.id, user.id)) as unknown as ReviewCase[];
 }
 
@@ -124,13 +127,14 @@ export function assignReviewers(ids: unknown, reviewerId: number): { changed: nu
     throw new Error('请选择要指派复核的任务');
   }
   return transaction(db => {
-    if (!Number.isSafeInteger(reviewerId) || !db.prepare("SELECT 1 FROM users WHERE id = ? AND role = 'annotator'").get(reviewerId)) {
+    if (!Number.isSafeInteger(reviewerId) || !db.prepare("SELECT 1 FROM users WHERE id = ? AND role = 'annotator' AND work_role = 'legacy'").get(reviewerId)) {
       throw new Error('请选择有效的复核人');
     }
     const update = db.prepare("UPDATE assignment_reviews SET reviewer_id = ?, state = 'review' WHERE assignment_id = ?");
     const unique = new Set<number>(ids);
     for (const id of unique) {
       const row = getCase(id);
+      if (row.supplier_id) throw new Error('供应商任务请通过任务池领取或统计明细转派');
       if (row.state !== 'unassigned' && row.state !== 'review') throw new Error('部分任务已变更，本次未指派');
       if (row.assignee_id === reviewerId) throw new Error('所选复核人也负责其中的标注，请调整人员或选择范围');
       update.run(reviewerId, id);
@@ -140,7 +144,7 @@ export function assignReviewers(ids: unknown, reviewerId: number): { changed: nu
 }
 
 function activeRole(row: ReviewCase, userId: number): 'qc' | 'rework' {
-  if (row.state === 'review' && row.reviewer_id === userId) return 'qc';
+  if (row.state === 'review' && row.reviewer_id === userId && (!row.supplier_id || row.review_started_at)) return 'qc';
   if (row.state === 'rework' && row.assignee_id === userId) return 'rework';
   throw new Error('当前待办已变更或尚未分配给你，请返回工作台刷新');
 }
@@ -173,7 +177,12 @@ export function reviewHistory(id: number) {
 
 export function openReviewCase(id: number, user: UserRow) {
   const row = getCase(id);
-  return { version: row.version, task: row.task, role: activeRole(row, user.id), operator: user.display_name, operatorId: user.id,
+  const role = activeRole(row, user.id);
+  if (role === 'rework') getDb().prepare('UPDATE supplier_jobs SET rework_started_at = COALESCE(rework_started_at, ?) WHERE assignment_id = ?')
+    .run(new Date().toISOString(), id);
+  const feedback = row.kind === 'reworked' ? getDb().prepare(`SELECT note FROM review_versions
+    WHERE assignment_id = ? AND version < ? AND kind = 'return' ORDER BY version DESC LIMIT 1`).get(id, row.version)?.note : null;
+  return { version: row.version, task: row.task, role, feedback, operator: user.display_name, operatorId: user.id,
     note: row.note, episode: readVersion(id, row.version).episode };
 }
 
@@ -185,6 +194,9 @@ export function finishReviewCase(id: number, user: UserRow, body: {
 }) {
   return transaction(db => {
     const row = getCase(id);
+    if (Number.isSafeInteger(body.version) && row.version === Number(body.version) + 1 &&
+        db.prepare('SELECT 1 FROM review_versions WHERE assignment_id = ? AND version = ? AND author_id = ?')
+          .get(id, row.version, user.id)) return { state: row.state };
     const role = activeRole(row, user.id);
     if (row.version !== body.version) throw new Error('当前结果已有更新，请刷新后重新打开');
     if (body.timingCsv != null && typeof body.timingCsv !== 'string') throw new Error('工作记录格式无效');
@@ -195,6 +207,11 @@ export function finishReviewCase(id: number, user: UserRow, body: {
         'INSERT INTO review_versions (assignment_id, version, kind, author_id, note, payload, timing_csv, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       ).run(id, version, kind, user.id, note, JSON.stringify(episode), body.timingCsv || null, new Date().toISOString());
       db.prepare('UPDATE assignment_reviews SET state = ?, version = ? WHERE assignment_id = ?').run(next, version, id);
+      if (row.review_started_at && role === 'qc') {
+        const elapsed = Math.max(0, Math.round((Date.now() - Date.parse(row.review_started_at)) / 1000));
+        db.prepare('INSERT INTO supplier_review_timings VALUES (?, ?, ?)').run(id, version, elapsed);
+      }
+      db.prepare('UPDATE supplier_jobs SET review_started_at = NULL, rework_started_at = NULL WHERE assignment_id = ?').run(id);
       return { state: next };
     };
     if (body.returnFeedback != null) {

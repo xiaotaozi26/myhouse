@@ -94,3 +94,10 @@ function formatDramaTitle(value, fallback = '未命名剧集') {
   if (!title) return fallback;
   return title.startsWith('《') && title.endsWith('》') ? title : '《' + title + '》';
 }
+
+function age(value) {
+  if (!value) return '—';
+  const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 60000));
+  return minutes < 60 ? `${minutes} 分钟` : minutes < 1440 ? `${Math.floor(minutes / 60)} 小时` : `${Math.floor(minutes / 1440)} 天`;
+}
+

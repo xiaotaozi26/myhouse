@@ -14,13 +14,15 @@ annotatorRouter.get('/jobs', (req: Request, res: Response) => {
 
 annotatorRouter.get('/data', (req: Request, res: Response) => {
   const user = (req as AuthedRequest).user;
-  const { batchId, task, mode } = req.query as { batchId?: string; task?: string; mode?: string };
+  const { batchId, task, mode, item } = req.query as { batchId?: string; task?: string; mode?: string; item?: string };
   if (!batchId || !task || !mode) {
     res.status(400).json({ error: '缺少 batchId / task / mode' });
     return;
   }
   try {
-    const { jsonl, count } = jobData(batchId, task as TaskKey, mode as Mode, user.id);
+    const { jsonl, count, draftScope } = jobData(batchId, task as TaskKey, mode as Mode, user.id,
+      user.work_role === 'annotation' && typeof item === 'string' ? item : undefined);
+    if (draftScope) res.setHeader('X-Annotation-Draft-Scope', draftScope);
     const label = TASKS[task as TaskKey]?.key ?? task;
     const filename = `${batchId}-${label}-${mode}-${count}.jsonl`;
     res.setHeader('Content-Type', 'application/jsonl; charset=utf-8');

@@ -14,6 +14,10 @@ async function openPlatformReview({ id, task, keyPrefix, core, store, setRows, m
     throw new Error('浏览器草稿不属于这一集，请重新打开待办');
   }
   if (!saved) core.beginRound(parsed.rows[0], { role: work.role, operator: work.operator });
+  if (work.role === 'qc') {
+    document.body.classList.add('review-workspace');
+    document.body.dataset.reviewStage = work.version > 1 ? '复审' : '首审';
+  }
   setRows(parsed, '当前待办', parsed.ui, key);
   setOperator(work.operator);
 
@@ -22,10 +26,16 @@ async function openPlatformReview({ id, task, keyPrefix, core, store, setRows, m
   const form = $('form-scroll');
   const label = '完成并提交';
   button.textContent = label;
-  if (work.note && work.role === 'rework') {
+  if (work.role === 'qc' && work.episode.final_annotation?.force_submitted === true) {
+    const notice = document.createElement('p');
+    notice.className = 'platform-review-note';
+    notice.textContent = '本集标注稿通过「强制提交」送审，可能含未核对项或未通过检查的内容。';
+    $('message').before(notice);
+  }
+  if ((work.note && work.role === 'rework') || work.feedback) {
     const note = document.createElement('p');
     note.className = 'platform-review-note';
-    note.textContent = '退回原因：' + work.note;
+    note.textContent = (work.feedback ? '上轮返修意见：' : '退回原因：') + (work.feedback || work.note);
     $('message').before(note);
   }
   setSubmit(async ({ returnOnly = false } = {}) => {
@@ -57,7 +67,7 @@ async function openPlatformReview({ id, task, keyPrefix, core, store, setRows, m
       const reply = await result.json();
       if (!result.ok) throw new Error(reply.error || '提交失败');
       $('saved').textContent = '已提交';
-      window.location.replace('/annotator.html');
+      window.location.replace('/');
     } catch (error) {
       button.disabled = false;
       button.textContent = label;

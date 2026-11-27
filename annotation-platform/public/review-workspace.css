@@ -1,0 +1,167 @@
+/* The four review views share the editor markup with annotation and rework. */
+.review-workspace {
+  --review-surface: #fff;
+  --review-rule: #dfe6ee;
+  --review-rule-subtle: #edf0f4;
+  --review-text-secondary: #475569;
+  --review-inset: clamp(12px, 1.5vw, 24px);
+}
+
+.review-workspace .annotation {
+  background: var(--review-surface);
+}
+
+.review-workspace #form-scroll {
+  padding: 14px var(--review-inset) 20px;
+}
+
+.review-workspace .steps {
+  gap: 12px;
+  padding: 0 var(--review-inset);
+}
+
+.review-workspace .steps > button {
+  min-height: 40px;
+  padding: 5px 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--review-text-secondary);
+}
+
+.review-workspace .steps > button:hover {
+  color: var(--accent);
+}
+
+.review-workspace .steps > button[aria-pressed="true"] {
+  border-bottom-color: var(--accent);
+  color: #1e40af;
+}
+
+.review-workspace .steps > button:focus-visible {
+  outline-offset: -3px;
+}
+
+.review-workspace .work-instruction {
+  padding: 6px var(--review-inset);
+  border-bottom-color: var(--review-rule-subtle);
+}
+
+.review-workspace .work-instruction > button,
+.review-workspace .work-instruction #bulk-check {
+  border-color: transparent;
+  background: transparent;
+}
+
+.review-workspace .work-instruction > button:not(:disabled):hover,
+.review-workspace .work-instruction #bulk-check:not(:disabled):hover {
+  background: var(--soft);
+}
+
+.review-workspace #round-panel {
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 0 0 14px;
+  border: 0;
+  border-bottom: 1px solid var(--review-rule);
+  border-radius: 0;
+  background: transparent;
+}
+
+.review-workspace #round-panel p {
+  margin-block: 0;
+}
+
+.review-workspace #round-panel .verdict {
+  column-gap: 18px;
+  row-gap: 2px;
+}
+
+.review-workspace #round-panel .verdict legend {
+  margin-bottom: 2px;
+}
+
+.review-workspace #round-panel .verdict label {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 4px;
+}
+
+.review-workspace #round-panel #qc-note {
+  min-height: 54px;
+}
+
+.review-workspace :is(.platform-review-note, #round-panel > p:not(.muted)) {
+  border: 0;
+  border-inline-start: 2px solid #ca8a04;
+  background: #fffbeb;
+  color: #78350f;
+}
+
+.review-workspace .platform-review-note {
+  margin: 4px var(--review-inset);
+  padding: 5px 8px;
+}
+
+.review-workspace #round-panel > p:not(.muted) {
+  padding: 5px 8px;
+}
+
+.review-workspace #form .card {
+  background: transparent;
+  box-shadow: none;
+  border-block-start: 0;
+  border-inline-end: 0;
+  border-block-end: 1px solid var(--review-rule);
+  border-radius: 0;
+}
+
+.review-workspace #form .card:not(.ck-checked, .ck-stale, .bad, .orphan) {
+  border-inline-start: 0;
+}
+
+.review-workspace #form :is(.card-head, .seg-head) {
+  padding-inline: 6px;
+  border: 0;
+  background: transparent;
+}
+
+.review-workspace #form .card-body {
+  padding: 2px 6px 12px;
+}
+
+.review-workspace #form :is(.array-card, .more, .group, .map-cell, .confirm-row):not(.bad, .bad-inside, .orphan, .blocked) {
+  padding-inline: 6px;
+  border: 0;
+  border-block-start: 1px solid var(--review-rule-subtle);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.review-workspace #round-panel .problem-link {
+  border: 0;
+  border-inline-start: 2px solid #e7a991;
+  border-radius: 0;
+  background: transparent;
+}
+
+.review-workspace .decision {
+  padding-inline: var(--review-inset);
+}
+
+@media (max-width: 650px) {
+  .review-workspace .steps { gap: 10px; }
+  .review-workspace .steps > button { min-height: 36px; font-size: 12px; }
+  .review-workspace #round-panel .verdict { column-gap: 8px; }
+}
+
+/* Keep review decisions and data visible while hiding annotation instructions. */
+.review-workspace #dialog-body .annotation-guidance,
+.review-workspace .work-instruction #instruction,
+.review-workspace #form .s-hint {
+  display: none;
+}
